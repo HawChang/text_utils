@@ -16,16 +16,19 @@ import sys
 reload(sys)
 sys.setdefaultencoding("gb18030")
 
-import os
 import codecs
+import os
 import pickle
+import time
+
+from sklearn.datasets import dump_svmlight_file
 
 from logger import Logger
 
 log = Logger().get_logger()
 
 
-def get_data(data_path, verbose=False):
+def get_data(data_path, read_func=lambda x:x, encoding="gb18030", verbose=False):
     """获取该文件(或目录下所有文件)的数据
     [in]  data_path : str, 数据集地址
           verbose   : bool, 是否展示处理信息
@@ -34,7 +37,7 @@ def get_data(data_path, verbose=False):
     file_list = get_file_name_list(data_path, verbose)
     data = list()
     for file_path in file_list:
-        data.extend(read_from_file(file_path))
+        data.extend(read_from_file(file_path, read_func))
     return data
 
 
@@ -115,3 +118,27 @@ def dump_pkl(obj, pkl_path, overwrite=False):
         with open(pkl_path, 'wb') as wf:
             pickle.dump(obj, wf)
         log.debug("save to \"%s\" succeed." % pkl_path)
+
+
+def label_encoder_save_as_class_id(label_encoder, class_id_path, conf_thres = 0.5):
+    """将LabelEncoder对象转为def-user中的class_id.txt格式的形式存入指定文件
+    [in]  label_encoder: class, 对象
+          class_id_path: str, 存储文件地址
+          conf_thres: float, 类别的阈值 这里只能统一设置
+    """
+    class_id_list = ["%d\t%s\t%f" % (index, str(class_name), conf_thres) for \
+            index, class_name in enumerate(label_encoder.classes_)]
+    write_to_file(class_id_list, class_id_path)
+    log.debug("trans label_encoder to \"%s\" succeed." % class_id_path)
+
+
+def dump_libsvm_file(X, y, file_path):
+    """将数据集转为libsvm格式 liblinear、xgboost、lightgbm都可以接收该格式
+    [in]  X: array-like、sparse matrix, 数据特征
+          y: array-like、sparse matrix, 类别结果
+          file_path: string、file-like in binary model, 文件地址，或者二进制形式打开的可写文件
+    """
+    log.debug("trans libsvm format data to %s." % file_path)
+    start_time = time.time()
+    dump_svmlight_file(X, y, file_path)
+    log.info("cost_time : %.4fs" % (time.time() - start_time))

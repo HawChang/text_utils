@@ -1,2 +1,11 @@
+# vim undo备份文件
 *.un~
+
+# py编译文件
 *.pyc
+
+# 切词工具
+dict/chinese_gbk.tar.gz
+dict/chinese_gbk/
+utils/word_seg.py
+utils/wordseg.so

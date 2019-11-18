@@ -47,6 +47,7 @@ class FeatureSelector(object):
             self._feature_selector = SelectPercentile(chi2, percentile=feature_keep_percent)
         else:
             self._feature_selector = SelectKBest(chi2, k=feature_keep_num)
+        
         select_conf = "select top "
         select_conf += "%d%%" % feature_keep_percent if is_percent else "%d" % feature_keep_num
         log.info("select conf: %s." % select_conf)
@@ -74,14 +75,14 @@ class FeatureSelector(object):
                 (feature_vec.shape[1], len(reserved_feature_name)))
         
         if reserved_feature_file is not None:
-            #列表，保存各保留特征的index、字面、得分信息
-            reserved_feature_list = zip(range(len(reserved_feature_name)), \
-                    reserved_feature_name, reserved_feature_score)
+            #列表，保存各保留特征的字面、得分信息
+            reserved_feature_list = zip(reserved_feature_name, reserved_feature_score)
 
-            reserved_feature_list = sorted(reserved_feature_list, key=lambda x:x[2], reverse=True)
+            reserved_feature_list = sorted(reserved_feature_list, key=lambda x:x[1], reverse=True)
+            reserved_feature_name = [x[0] for x in reserved_feature_list]
 
-            write_to_file(reserved_feature_list, reserved_feature_file, \
-                    write_func=lambda x : "%d\t%s\t%.4f" % (x[0], x[1], x[2]))
+            write_to_file(enumerate(reserved_feature_list), reserved_feature_file, \
+                    write_func=lambda x : "%d\t%s\t%.4f" % (x[0] + 1, x[1][0], x[1][1]))
         return reserved_feature_name
 
     def transform(self, feature_vec):

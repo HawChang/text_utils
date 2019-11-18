@@ -13,8 +13,6 @@ Date: 2019/09/23 14:03:51
 """
 
 import sys
-reload(sys)
-sys.setdefaultencoding("gb18030")
 
 import time
 import os

@@ -1,17 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: gb18030 -*-
-########################################################################
-# 
-# Copyright (c) 2019 Baidu.com, Inc. All Rights Reserved
-# 
-########################################################################
  
 """
-File: word_segger.py
-Author: zhanghao55(zhanghao55@baidu.com)
-Date: 2019/09/19 21:12:03
+Author:   zhanghao55@baidu.com
+Date  :   19/09/19 21:12:03
+DESC  :   Õ®”√«–¥ ¿‡
 """
-
 import sys
 reload(sys)
 sys.setdefaultencoding("gb18030")

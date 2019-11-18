@@ -29,7 +29,7 @@ log = Logger().get_logger()
 class FeatureGenerator(object):
     def __init__(self,
             seg_method="word_seg",
-            segdict_path="dict/chinese_gbk",
+            segdict_path="src/text_utils/dict/chinese_gbk",
             stopword_path=None,
             encoding="gb18030",
             ngram=3,
@@ -58,7 +58,7 @@ class FeatureGenerator(object):
         # 得到切词结果 切词结果为字符串列表 unicode编码
         tokens = self._segger.seg_words(text)
         if verbose:
-            log.debug("tar string   : %s" % tar_string.encode("gb18030"))
+            log.debug("tar string   : %s" % text.encode("gb18030"))
             log.debug("seg result   : %s" % "/ ".join(tokens).encode("gb18030"))
         # 去除停用词
         valid_tokens = [x for x in tokens if len(x.strip()) != 0 and x not in self._stopwords]
@@ -66,28 +66,34 @@ class FeatureGenerator(object):
             log.debug("valid tokens : %s" % "/ ".join(valid_tokens).encode("gb18030"))
         return valid_tokens
 
-    def gen_ngram_feature(self, token_list):
+    def gen_ngram_feature(self, token_list, duplicate=False):
         """根据列表生成ngram特征
         [in] token_list: list[str], 单词列表, unicode编码
+             duplicate: bool, true则生成的特征不去重
         [out] features: list[str], 特征列表, unicode编码
         """
-        feature_set = set()
+        feature_list = list()
         # 生成ngram特征
         for start_pos in range(len(token_list)):
             cur_feature = ""
             for offset in range(min(len(token_list)-start_pos, self._ngram)):
                 cur_feature += token_list[start_pos + offset]
                 if len(cur_feature) >= self._feature_min_length:
-                    feature_set.add(cur_feature)
-        return feature_set
+                    feature_list.append(cur_feature)
+        if duplicate:
+            return feature_list
+        else:
+            return set(feature_list)
 
-    def gen_feature(self, text, verbose=False):
+    def gen_feature(self, text, verbose=False, duplicate=False):
         """根据字符串生成ngram特征
         [in] text: str, 字符串, unicode或gb18030编码
+             verbose: bool, true则显示执行细节信息
+             duplicate: bool, true则生成所有特征，不去重
         [out] features: list[str], 特征列表, unicode编码
         """
         valid_tokens = self.seg_words(text, verbose)
-        return self.gen_ngram_feature(valid_tokens)
+        return self.gen_ngram_feature(valid_tokens, duplicate)
     
     def destroy(self):
         """释放内存

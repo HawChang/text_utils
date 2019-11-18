@@ -13,11 +13,16 @@ Date: 2019/09/19 20:49:02
 """
 
 import sys
-sys.setdefaultencoding("gb18030")
-reload(sys)
-
 import logging
 
+"""
+Logger的级别：
+1. DEBUG
+2. INFO
+3. WARNING
+4. ERROR
+5. CRITICAL
+"""
 
 class Logger(object):
     _is_init = False	
