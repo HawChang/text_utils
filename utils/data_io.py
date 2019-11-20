@@ -132,13 +132,14 @@ def label_encoder_save_as_class_id(label_encoder, class_id_path, conf_thres = 0.
     log.debug("trans label_encoder to \"%s\" succeed." % class_id_path)
 
 
-def dump_libsvm_file(X, y, file_path):
+def dump_libsvm_file(X, y, file_path, zero_based=False):
     """将数据集转为libsvm格式 liblinear、xgboost、lightgbm都可以接收该格式
     [in]  X: array-like、sparse matrix, 数据特征
           y: array-like、sparse matrix, 类别结果
           file_path: string、file-like in binary model, 文件地址，或者二进制形式打开的可写文件
+          zero_based: bool, true则特征id从0开始 liblinear训练时要求特征id从1开始 因此一般需要为False
     """
     log.debug("trans libsvm format data to %s." % file_path)
     start_time = time.time()
-    dump_svmlight_file(X, y, file_path)
+    dump_svmlight_file(X, y, file_path, zero_based=zero_based)
     log.info("cost_time : %.4fs" % (time.time() - start_time))
