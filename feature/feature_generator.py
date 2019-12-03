@@ -22,6 +22,8 @@ sys.path.append("%s/../" % _cur_dir)
 
 from utils.word_segger import WordSegger
 from utils.data_io import read_from_file
+from utils.data_io import dump_pkl
+from utils.data_io import load_pkl
 from utils.logger import Logger
 
 log = Logger().get_logger()
@@ -43,12 +45,19 @@ class FeatureGenerator(object):
              n_gram: str: int, ngram参数
              feature_min_length: int, 特征最小长度
         """
-        self._segger = WordSegger(seg_method)
-        self._ngram = ngram
+        # 保存各配置信息
+        self.seg_method = seg_method
+        self.segdict_path = segdict_path
+        self.stopword_path = stopword_path
+        self.encoding = encoding
+        self._ngram = 3 if ngram is None or ngram < 0 else ngram
+        self._feature_min_length = 0 if feature_min_length is None else feature_min_length
+
+        # 加载切词工具和停用词信息
+        self._segger = WordSegger(self.seg_method, self.segdict_path)
         self._stopwords = set() if stopword_path is None \
                 else set(read_from_file(stopword_path, encoding=encoding))
-        self._feature_min_length = 0 if feature_min_length is None else feature_min_length
-        self._ngram = 3 if ngram is None or ngram < 0 else ngram
+
 
     def seg_words(self, text, verbose=False):
         """切词
@@ -100,9 +109,26 @@ class FeatureGenerator(object):
         """
         self._segger.destroy()
 
+    @staticmethod
+    def save(generator, pkl_path, overwrite=False):
+        """保存特征生成类
+        """
+        temp = generator._segger
+        generator._segger = None
+        dump_pkl(generator, pkl_path, overwrite)
+        generator._segger = temp
+    
+    @staticmethod
+    def load(pkl_path):
+        """加载特征生成类
+        """
+        generator = load_pkl(pkl_path)
+        generator._segger = WordSegger(generator.seg_method, generator.segdict_path)
+        return generator
+
 
 if __name__ == "__main__":
-    generator = FeatureGenerator("word_seg", stopword_path="data/stopword.txt")
+    generator = FeatureGenerator("word_seg", stopword_path="src/text_utils/dict/stopword.txt")
     #generator = FeatureGenerator("word_seg")
     
     tests = ["测试是否能够正常切词",
@@ -114,4 +140,6 @@ if __name__ == "__main__":
         feature_set = generator.gen_feature(test)
         print("/ ".join(feature_set).encode("gb18030"))
 
+    FeatureGenerator.save(generator, "src/text_utils/test/output/generator.pkl", True)
+    generator = FeatureGenerator.load("src/text_utils/test/output/generator.pkl")
     generator.destroy()

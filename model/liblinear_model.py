@@ -87,13 +87,15 @@ def liblinear_train(
         log.warning("liblinear train failed.")
         log.error(e)
         raise e
-    log.info("check feature weight file")
+
     if feature_weight_save_path is not None:
         log.info("trans liblinear model to feature_weight_file")
         if feature_name_list is None:
             log.warning("feature_weight_file relies on feature_name_list to creat. exit.")
         else:
             gen_feature_weight_file(model_path, feature_name_list, feature_weight_save_path)
+    
+    log.info("liblinear train finish")
 
 
 def liblinear_format(feature_list, feature_id_dict):
