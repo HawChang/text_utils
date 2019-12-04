@@ -6,9 +6,6 @@ Author:   zhanghao55@baidu.com
 Date  :   19/09/19 21:12:03
 DESC  :   通用切词类
 """
-import sys
-reload(sys)
-sys.setdefaultencoding("gb18030")
 
 import jieba
 import word_seg
@@ -56,7 +53,7 @@ class WordSegger(object):
 
 if __name__ == "__main__":
     # 测试
-    segger = WordSegger("jieba")
+    segger = WordSegger(segdict_path="./dict/chinese_gbk")
     print(" ".join(segger.seg_words("测试该切词类处理gb18030编码的字符串")).encode("gb18030"))
     print(" ".join(segger.seg_words(u"再看看unicode编码的字符串是否也可以")).encode("gb18030"))
     print(" ".join(segger.seg_words(u"孩子近视，度数六百度，去哪配眼镜？")).encode("gb18030"))
