@@ -12,7 +12,6 @@ Author: work(work@baidu.com)
 Date: 2019/09/19 20:49:02
 """
 
-import sys
 import logging
 
 """

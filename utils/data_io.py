@@ -12,10 +12,6 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/09/19 20:44:30
 """
 
-import sys
-reload(sys)
-sys.setdefaultencoding("gb18030")
-
 import codecs
 import os
 import pickle
@@ -49,27 +45,32 @@ def get_file_name_list(data_path, verbose=False):
           verbose   : bool, 是否展示处理信息
     [out] file_list : list[str], 数据集文件名称列表
     """
+    from collections import deque
     file_list = list()
-    log.info("check data path: %s." % data_path)
-    # 首先检查原始数据是文件还是文件夹
-    if os.path.isdir(data_path):
-        log.info("data path is directory.")
-        files = os.listdir(data_path)
-        # 遍历文件夹中的每一个文件
-        for file_name in files:
-            # 如果文件名以.开头 说明该文件隐藏 不是正常的数据文件
-            if len(file_name) == 0 or file_name[0] == ".":
-                continue
-            file_path = os.path.join(data_path, file_name)
-            file_list.append(file_path)
-    elif os.path.isfile(data_path):
-        log.info("data path is file.")
-        file_list.append(data_path)
-    else:
-        raise TypeError("unknown type of data path : %s." % data_path)
+    path_stack = deque()
+    path_stack.append(data_path)
+    while len(path_stack) != 0:
+        cur_path = path_stack.pop()
+        log.debug("check data path: %s." % cur_path)
+        # 首先检查原始数据是文件还是文件夹
+        if os.path.isdir(cur_path):
+            #log.debug("data path is directory.")
+            files = os.listdir(cur_path)
+            # 遍历文件夹中的每一个文件
+            for file_name in files:
+                # 如果文件名以.开头 说明该文件隐藏 不是正常的数据文件
+                if len(file_name) == 0 or file_name[0] == ".":
+                    continue
+                file_path = os.path.join(cur_path, file_name)
+                path_stack.append(file_path)
+        elif os.path.isfile(cur_path):
+            #log.info("data path is file. add to list.")
+            file_list.append(cur_path)
+        else:
+            raise TypeError("unknown type of data path : %s" % cur_path)
 
-    log.info("file list:")
-    for index, file_name in enumerate(file_list):
+    log.info("file list top 20:")
+    for index, file_name in enumerate(file_list[:20]):
         log.info("#%d: %s" % (index + 1, file_name))
     return file_list
 
