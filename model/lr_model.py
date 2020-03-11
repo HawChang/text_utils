@@ -22,8 +22,10 @@ from collections import defaultdict
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 
-from utils.logger import Logger
 from utils.data_io import read_from_file
+from utils.logger import Logger
+from utils.softmax import softmax
+
 
 log = Logger().get_logger()
 
@@ -36,20 +38,18 @@ def argsort(number_list):
     return sorted(range(len(number_list)), key=lambda x:number_list[x])
 
 class LRModel(object):
-    def __init__(self, file_manager=None):
+    def __init__(self):
         """LR模型初始化
-        [in]  file_manager: obj, 各类文件信息
         """
-        self.file_manager = file_manager
         self.model_loaded = False
 
     def liblinear_train(self,
-            train_data_path=None,
-            model_path=None,
+            train_data_path,
+            model_path,
             liblinear_train_path="/home/work/zhanghao55/tools/liblinear-2.20/train",
             model_conf="-s 0"):
         """使用liblinear训练模型
-        [in] train_data_path: str, 训练数据地址
+        [in] train_data_path: str, 训练数据地址 liblinear训练数据格式
              model_path: str, 训练模型存储地址
              liblinear_train_path: str, liblinear训练工具地址
              model_conf: str, 训练时参数
@@ -61,10 +61,6 @@ class LRModel(object):
         # liblinear工具地址
         assert os.path.isfile(liblinear_train_path), "%s is not a file." % liblinear_train_path
         try:
-            train_data_path = self.file_manager.train_lib_format_path \
-                    if train_data_path is None else train_data_path
-            model_path = self.file_manager.model_path if model_path is None else model_path
-
             log.info("liblinear train start...")
             start_time = time.time()
             cmd_str =' '.join([
@@ -100,20 +96,18 @@ class LRModel(object):
 
         log.info("liblinear train finish")
 
-    def load_model(self, model_path=None, feature_id_path=None):
+    def load_model(self, model_path, feature_id_path):
         """根据liblinear生成的模型文件和特征保留文件加载feature_weight_dict
         [in]  model_path: str, liblinear模型文件地址
               feature_id: str, 特征字面文件地址, 其顺序应与liblinear模型文件中特征的顺序一致
         """
-        model_path = self.file_manager.model_path if model_path is None else model_path
-        feature_id_path = self.file_manager.reserved_feature_path \
-                if feature_id_path is None else feature_id_path
 
-        feature_name_list = read_from_file(feature_id_path, \
+        self.feature_name_list = read_from_file(feature_id_path, \
                 read_func=lambda x: x.strip("\n").split("\t")[1])
         
         self.label_list = list()
         self.feature_weight_dict = dict()
+        self.softmax_feature_weight_dict = dict()
 
         # 读入模型文件中的特征权值
         # 按类别值从小到大的顺序给出
@@ -147,60 +141,61 @@ class LRModel(object):
                 reordered_weights = list()
                 for weight_index in range(class_num):
                     reordered_weights.append(float(weights[index_transfer[weight_index]]))
-                self.feature_weight_dict[feature_name_list[feature_index]] = reordered_weights
+                self.feature_weight_dict[self.feature_name_list[feature_index]] = reordered_weights
+                self.softmax_feature_weight_dict[self.feature_name_list[feature_index]] = softmax(reordered_weights, axis=1)
                 feature_index += 1
         log.info("cost time %.4fs." % (time.time() - start_time))
         self.model_loaded = True
 
     def save_in_feature_weight_format(
             self,
-            feature_weight_save_path=None,
+            feature_weight_save_path,
             model_path=None,
             feature_id_path=None):
         """根据liblinear生成的模型文件和特征保留文件生成线上需要的multiclass特征权重文件
-        [in]  feature_weight_save_path: str, 特征权重文件地址
+        [in]  feature_weight_save_path: str, 特征权重输出文件地址
               model_path: str, liblinear模型文件地址
               feature_id: str, 特征字面文件地址, 其顺序应与liblinear模型文件中特征的顺序一致
         """
 
-        feature_weight_save_path = self.file_manager.feature_weight_path \
-                if feature_weight_save_path is None else feature_weight_save_path
-        
-        feature_id_path = self.file_manager.reserved_feature_path \
-                if feature_id_path is None else feature_id_path
-
         if not self.model_loaded:
             log.debug("model not loaded")
+            # load model时 会生成self.feature_name_list和self.feature_weight_dict
+            if model_path is None or feature_id_path is None:
+                raise ValueError("model_path and feature_id_path are required when loading model")
             self.load_model(model_path, feature_id_path)
 
         log.debug("gen_feature_weight_file start...")
         start_time = time.time()
-        feature_name_list = read_from_file(feature_id_path, \
-                read_func=lambda x: x.strip("\n").split("\t")[1])
-
         with codecs.open(feature_weight_save_path, "w", "gb18030") as wf:
             wf.write("classes: %s" % ",".join(self.label_list))
-            for index, feature_name in enumerate(feature_name_list):
+            for index, feature_name in enumerate(self.feature_name_list):
                 weight_str = " ".join(["%.20f" % x for x in self.feature_weight_dict[feature_name]])
                 wf.write("\n" + "\t".join([str(index), feature_name, weight_str]))
         log.debug("cost time %.4fs." % (time.time() - start_time))
 
-    def check(self, features, min_conf=0.05, digits=4):
+    def check(self, features, min_conf=0.05, digits=4, evidence=False, topk=10):
         """根据特征列表预测结果
         [in]  features : list[str], 特征列表
               min_conf : float, 作为标签的最小置信度
               digits: int, 精度控制在几位小数
+              evidence: bool, true则多返回一个正向特征信息 固定返回
+              topk: int, 取绝对值前topk个特征作为证据
         [out] pred_list: list[(str, str)], 预测结果二元组列表, (类别, 置信度) 由大到小
         **已验证 与liblinear模型输出概率一致 此时bias为-1（及默认值）
         """
         label_value = defaultdict(lambda: 0.0)
         total = 0.0
+        evidence_dict = defaultdict(list)
         for feature in features:
             if feature not in self.feature_weight_dict:
                 continue
+            softmax_weights = self.softmax_feature_weight_dict[feature]
             for index, weight in enumerate(self.feature_weight_dict[feature]):
                 try:
                     label_value[self.label_list[index]] += weight
+                    # 用softmax的结果来判断各特征对当前类的重要性 但给证据时要给实际该特征对该类的值
+                    evidence_dict[self.label_list[index]].append((feature, softmax_weights[index], weight))
                 except IndexError as e:
                     print("index error. index = %d." % index)
                     raise e
@@ -218,15 +213,17 @@ class LRModel(object):
             pred_proba = weight_pred / total
             if pred_proba < min_conf:
                 continue
-            pred_list.append((label, digits_format % pred_proba))
+            # 准备证据
+            cur_label_evidence = "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
+                    sorted(evidence_dict[label], key=lambda x:x[1], reverse=True)[:topk]])
+            pred_list.append((label, digits_format % pred_proba, cur_label_evidence))
+        
+        #label_evidence = None
+        #if evidence:
+        #    label_evidence = u"无预测结果" if len(pred_list) == 0 else \
+        #            "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
+        #            sorted(evidence_dict[pred_list[0][0]], key=lambda x:x[1], reverse=True)[:topk]])
         return pred_list
 
 if __name__ == "__main__":
-    from utils.file_manager import FileManager
-    f_manager = FileManager(
-            data_root="local_data",
-            model_root="model")
-
-    lr_model = LRModel(f_manager)
-    lr_model.liblinear_train()
-    lr_model.save_in_feature_weight_format()
+    pass

@@ -50,7 +50,6 @@ def grid_search_cv(estimator, params, train_data, test_data, scoring=None,
     log.debug("cost time : %.4fs" % (time.time() - start_time))
     grid_search_cv_res(gsc)
     log.info("best params : %s" % str(gsc.best_params_))
-    log.debug("score : %.4f" % scoring(train_data, gsc.best_estimator_.labels_))
     return gsc
 
 def grid_search_cv_res(gsc):

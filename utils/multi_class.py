@@ -63,7 +63,11 @@ def lr_predict(features, feature_weight_dict, label_list, min_conf=0.05):
         if feature not in feature_weight_dict:
             continue
         for index, weight in enumerate(feature_weight_dict[feature]):
-            label_value[label_list[index]] += weight
+            try:
+                label_value[label_list[index]] += weight
+            except IndexError as e:
+                print("index error. index = %d." % index)
+                raise e
 
     #log.debug("label_weght_sum: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
 

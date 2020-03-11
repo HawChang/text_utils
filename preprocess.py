@@ -29,31 +29,46 @@ from feature.feature_vectorizer import init_vectorizer
 log = Logger().get_logger()
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
+class ProcessFilePath(object):
+    def __init__(self, output_dir="local_data"):
+        """预处理流程中各输出文件地址
+        [in] output_dir: str, 输出结果目录地址
+        """
+        self.output_dir = output_dir
+
+        # 中间数据地址
+        self.total_data_path = self.output_dir + "/total_data.txt"
+        self.train_data_path = self.output_dir + "/train_data.txt"
+        self.val_data_path = self.output_dir + "/test_data.txt"
+
+        self.total_feature_path = self.output_dir + "/total_feature.txt"
+        self.train_feature_path = self.output_dir + "/train_feature.txt"
+        self.val_feature_path = self.output_dir + "/test_feature.txt"
+
+        self.train_lib_format_path = self.output_dir + "/train_lib_format.txt"
+        self.val_lib_format_path = self.output_dir + "/test_lib_format.txt"
+
+
 class Preprocessor(object):
     """给定数据集地址 给出数据的向量矩阵
     """
     def __init__(self,
-            file_manager,
             feature_gen_func,
             vec_method="count",
             feature_keep_percent=90,
             feature_keep_num=10,
             is_percent=True,
             test_ratio=0.2,
-            min_df=2,
-            re_seg=True):
+            min_df=2):
         """初始化预处理类
-        [in]  file_manager: obj, 储存各种文件地址
-              feature_gen_func: function, 生成特征的函数
+        [in]  feature_gen_func: function, 生成特征的函数
               vec_method: str, 向量化方式
               feature_keep_percent: float, 保留特征的比例
               feature_keep_num: int, 保留特征的数目
               is_percent: bool, 保留特征的方式，按比例还是数目
               test_ratio: float, 验证集占总数据集的比例
               min_df: int, 特征保留的最小频次
-              re_seg: bool, 是否重新从原始数据生成全部数据的特征信息
         """
-        self.file_manager = file_manager
         self.feature_selector = FeatureSelector(
                 feature_keep_percent=feature_keep_percent,
                 feature_keep_num=feature_keep_num,
@@ -62,42 +77,54 @@ class Preprocessor(object):
         self.vec_method = vec_method
         self.test_ratio = test_ratio
         self.min_df = min_df
-        self.re_seg = re_seg
 
         log.info("Preprocessor init succeed")
 
     def gen_data_vec(self,
             data_path,
+            feature_path,
             split_train_test=False,
-            feature_select=False):
+            feature_select=False,
+            to_file=True,
+            re_seg=True,
+            process_file_path=None):
         """根据给定数据集地址 生成特征
         [in]  data_path: str, 数据集地址
+              feature_path: str, 特征保存地址
               split_train_test: bool, true则划分测试集训练集
               feature_select: bool, true则进行特征选择
+              to_file: bool, true则中间数据会被存储
+              re_seg: bool, 是否重新从原始数据生成全部数据的特征信息
+              process_file_path: ProcessFilePath, 预处理时各文件地址
         [out] train_feature_vec: matrix, 训练数据特征矩阵
               train_label: list[str], 训练数据标签列表
               val_feature_vec: matrix, 验证数据特征矩阵, 若不划分训练验证数据集则为None
               val_label: list[str], 验证数据标签列表, 若不划分训练验证数据集则为None
         """
+        # 如果要输出文件 则需要process_file_path
+        if to_file and process_file_path is None:
+            raise ValueError("specify process_file_path when output preprocess data")
+
         # 首先根据数据集 生成数据的特征
-        if self.re_seg:
+        if re_seg:
             log.info("gen data feature.")
             start_time = time.time()
             data_list = get_data(data_path)
             # 调用函数 生成特征
             feature_list = [self.feature_gen_func(x) for x in data_list]
-            # 存储数据信息
-            write_to_file(data_list, self.file_manager.total_data_path)
-            # 存储特征信息
-            write_to_file(feature_list, self.file_manager.total_feature_path, \
-                    write_func=lambda x : "%d\t%s" % x)
+            if to_file:
+                # 存储数据信息
+                write_to_file(data_list, process_file_path.total_data_path)
+                # 存储特征信息
+                write_to_file(feature_list, process_file_path.total_feature_path, \
+                        write_func=lambda x : "%d\t%s" % x)
             log.info("cost_time : %.4f" % (time.time() - start_time))
         else:
             log.info("load data feature.")
             start_time = time.time()
             # 加载已有的数据和特征列表
-            data_list = read_from_file(self.file_manager.total_data_path)
-            feature_list = read_from_file(self.file_manager.total_feature_path, \
+            data_list = read_from_file(process_file_path.total_data_path)
+            feature_list = read_from_file(process_file_path.total_feature_path, \
                     read_func=lambda x: x.strip("\n").split("\t"))
             feature_list = [(int(x[0]), x[1]) for x in feature_list]
             log.info("cost_time : %.4f" % (time.time() - start_time))
@@ -111,14 +138,15 @@ class Preprocessor(object):
             train_feature_list = feature_list
 
         # 存储数据和特征信息
-        write_to_file(train_data_list, self.file_manager.train_data_path)
-        write_to_file(train_feature_list, self.file_manager.train_feature_path, \
-                write_func=lambda x : "%s\t%s" % (x[0], x[1]))
-        
-        if split_train_test:
-            write_to_file(val_data_list, self.file_manager.val_data_path)
-            write_to_file(val_feature_list, self.file_manager.val_feature_path, \
+        if to_file:
+            write_to_file(train_data_list, process_file_path.train_data_path)
+            write_to_file(train_feature_list, process_file_path.train_feature_path, \
                     write_func=lambda x : "%s\t%s" % (x[0], x[1]))
+            
+            if split_train_test:
+                write_to_file(val_data_list, process_file_path.val_data_path)
+                write_to_file(val_feature_list, process_file_path.val_feature_path, \
+                        write_func=lambda x : "%s\t%s" % (x[0], x[1]))
 
         # 特征列表中每个元素都是标签、特征的二元组
         train_label, train_feature = zip(*train_feature_list)
@@ -137,27 +165,27 @@ class Preprocessor(object):
                     train_feature_vec,
                     train_label,
                     vectorizer.get_feature_names(),
-                    reserved_feature_file=self.file_manager.reserved_feature_path)
+                    reserved_feature_file=feature_path)
             
-            # 生成各特征对应的id 从1开始 reserved_feature_name的顺序和reserved_feature_file中的顺序是一致的
+            # 生成各特征对应的id 从1开始 reserved_feature_name的顺序和feature_path中的顺序是一致的
             feature_id_dict = {v:(ind) for ind, v in enumerate(reserved_feature_name)}
 
             vectorizer = init_vectorizer(vec_method=self.vec_method,vocabulary=feature_id_dict)
             train_feature_vec = vectorizer.transform(train_feature)
             if split_train_test:
                 val_feature_vec = vectorizer.transform(val_feature)
-        else:
+        elif to_file:
             write_to_file([(ind+1, x) for ind, x in enumerate(vectorizer.get_feature_names())],
-                    self.file_manager.reserved_feature_path, write_func=lambda x: "%d\t%s" % x)
+                    feature_path, write_func=lambda x: "%d\t%s" % x)
         log.info("train feature vec shape: %s." % str(train_feature_vec.shape))
         if split_train_test:
             log.info("test feature vec shape: %s." % str(val_feature_vec.shape))
         
         log.info("trans to libsvm data file.")
         start_time = time.time()
-        dump_libsvm_file(train_feature_vec, train_label, self.file_manager.train_lib_format_path)
+        dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
         if split_train_test:
-            dump_libsvm_file(val_feature_vec, val_label, self.file_manager.val_lib_format_path)
+            dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
         log.info("cost_time : %.4f" % (time.time() - start_time))
         
         if not split_train_test:
@@ -166,25 +194,17 @@ class Preprocessor(object):
 
         return  train_feature_vec, train_label, val_feature_vec, val_label
 
-    #def feature_label_gen(self, line):
-    #    """根据字符串 提取其类别、特征 组成二元组
-    #    [in]  line: str, 数据集每一行的内容
-    #    [out] res: (int, str), 二元组由类别和特征组成 特征由空格连接为字符串
-    #    """
-    #    raise NotImplementedError("feature label gen function should be implemented.")
 
 if __name__ == "__main__":
     from utils.for_def_user import LabelEncoder
-    from utils.file_manager import FileManager
     from feature.feature_generator import FeatureGenerator
 
-    f_manager = FileManager(
-            data_root="src/text_utils/test/output/",
-            model_root="src/text_utils/test/output/")
-    label_encoder = LabelEncoder("src/text_utils/test/class_id.txt")
+    process_file_path = ProcessFilePath(output_dir="test/output/")
+    label_encoder = LabelEncoder("test/class_id.txt")
     feature_generator = FeatureGenerator(
             seg_method="word_seg",
-            stopword_path="src/text_utils/dict/stopword.txt",
+            segdict_path="dict/chinese_gbk",
+            stopword_path="dict/stopword.txt",
             ngram=3,
             feature_min_length=1)
     duplicate = False
@@ -216,23 +236,34 @@ if __name__ == "__main__":
     
 
     test_processor = Preprocessor(
-            file_manager=f_manager,
             feature_gen_func=feature_label_gen,
             vec_method="count",
             feature_keep_percent=40,
             feature_keep_num=10,
             is_percent=True,
             test_ratio=0.2,
-            min_df=2,
-            re_seg=True)
+            min_df=2)
 
-    test_processor.gen_data_vec("src/text_utils/test/train_data.txt",
+    test_processor.gen_data_vec("test/train_data.txt",
+            "test/output/feature_id.txt",
             split_train_test=False,
-            feature_select=False)
+            feature_select=False,
+            to_file=True,
+            re_seg=True,
+            process_file_path=process_file_path)
 
-    test_processor.gen_data_vec("src/text_utils/test/train_data.txt",
+    test_processor.gen_data_vec("test/train_data.txt",
+            "test/output/feature_id.txt",
             split_train_test=False,
-            feature_select=True)
-    test_processor.gen_data_vec("src/text_utils/test/train_data.txt",
+            feature_select=True,
+            to_file=True,
+            re_seg=True,
+            process_file_path=process_file_path)
+
+    test_processor.gen_data_vec("test/train_data.txt",
+            "test/output/feature_id.txt",
             split_train_test=True,
-            feature_select=True)
+            feature_select=True,
+            to_file=True,
+            re_seg=True,
+            process_file_path=process_file_path)
