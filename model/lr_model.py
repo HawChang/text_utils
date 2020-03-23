@@ -215,7 +215,7 @@ class LRModel(object):
                 continue
             # 准备证据
             cur_label_evidence = "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
-                    sorted(evidence_dict[label], key=lambda x:x[1], reverse=True)[:topk]])
+                    sorted(evidence_dict[label], key=lambda x:abs(x[2]), reverse=True)[:topk]])
             pred_list.append((label, digits_format % pred_proba, cur_label_evidence))
         
         #label_evidence = None

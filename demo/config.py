@@ -25,8 +25,8 @@ test_ratio = 0.2
 duplicate = False
 idea_word_feature_sep = False
 seg_method = "word_seg"
-stopword_path = "./dict/stopword.txt"
-segdict_path = "./dict/chinese_gbk"
+stopword_path = "./src/text_utils/dict/stopword.txt"
+segdict_path = "./src/text_utils/dict/chinese_gbk"
 ngram = 3
 feature_min_length = 2
 
@@ -42,7 +42,8 @@ rex = u"{关键词}|{投放地域}|{地域}|{|}"
 
 to_file = True
 # 模型训练时各数据地址
-train_data_root = "../mark_data/train_data/"
-data_root = "./local_data/"
-model_root = "./model/"
+train_data_dir = "./data/train_data/"
+mid_data_dir = "./local_data/"
+model_dir = "./model/"
+output_dir = "./output/"
 

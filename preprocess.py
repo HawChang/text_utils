@@ -82,7 +82,7 @@ class Preprocessor(object):
 
     def gen_data_vec(self,
             data_path,
-            feature_path,
+            feature_path=None,
             split_train_test=False,
             feature_select=False,
             to_file=True,
@@ -181,12 +181,13 @@ class Preprocessor(object):
         if split_train_test:
             log.info("test feature vec shape: %s." % str(val_feature_vec.shape))
         
-        log.info("trans to libsvm data file.")
-        start_time = time.time()
-        dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
-        if split_train_test:
-            dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
-        log.info("cost_time : %.4f" % (time.time() - start_time))
+        if to_file:
+            log.info("trans to libsvm data file.")
+            start_time = time.time()
+            dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
+            if split_train_test:
+                dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
+            log.info("cost_time : %.4f" % (time.time() - start_time))
         
         if not split_train_test:
             val_feature_vec = None

@@ -7,81 +7,68 @@
 ########################################################################
  
 """
-File: lr_model_demo.py
+File: cluster.py
 Author: zhanghao55(zhanghao55@baidu.com)
-Date: 2019/11/21 20:37:58
+Date: 2019/12/10 15:26:16
 """
 
 import os
-import re
 import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../../" % _cur_dir)
 
-from text_utils.model.lr_model_impl import BaseLRModel
-from text_utils.preprocess import ProcessFilePath
-from text_utils.feature.feature_generator import FeatureGenerator
+from text_utils.model.cluster_model_impl import BaseCluster
 from text_utils.utils.logger import Logger
-
-log = Logger().get_logger()
+from text_utils.feature.feature_generator import FeatureGenerator
+from text_utils.preprocess import ProcessFilePath
 
 import config
 
-class LRModelDemo(BaseLRModel):
-    """LR分类模型基础类
-    """
-    def __init__(self, mid_data_dir, model_dir, output_dir):
-        """
-        """
-        super(LRModelDemo, self).__init__(model_dir, output_dir)
-        self.mid_data_paths = ProcessFilePath(output_dir=mid_data_dir)
+log = Logger().get_logger()
 
+
+class ClusterDemo(BaseCluster):
+    def __init__(self, mid_data_dir, model_dir, output_dir):
+        super(ClusterDemo, self).__init__(model_dir, output_dir)
+        self.mid_data_paths = ProcessFilePath(output_dir=mid_data_dir)
+        
         self.feature_generator = FeatureGenerator(
                 seg_method=config.seg_method,
                 segdict_path=config.segdict_path,
                 stopword_path=config.stopword_path,
                 ngram=config.ngram,
                 feature_min_length=config.feature_min_length)
+
         FeatureGenerator.save(self.feature_generator, self.generator_path, True)
         self.line_process_num = 0
+        log.info("ClusterDemo init succeed")
 
-    def train_feature_label_gen(self, line):
+    def cluster_feature_label_gen(self, line):
         """根据字符串 提取其类别、特征 组成二元组
         [in]  line: str, 数据集每一行的内容
         [out] res: (int, str), 二元组由类别和特征组成 特征由空格连接为字符串
         """
         parts = line.strip("\n").split("\t")
-        label = self.label_encoder.transform(parts[0].strip())
-        idea_list = parts[1].split("\x01")
-        word_list = parts[2].split("\x01")
-        feature_list = list()
-        if config.idea_word_feature_sep:
-            for text in idea_list:
-                feature_list.extend(["idea_%s" % x for x in self.feature_generator.gen_feature(text, duplicate=config.duplicate)])
-            for text in word_list:
-                feature_list.extend(["word_%s" % x for x in self.feature_generator.gen_feature(text, duplicate=config.duplicate)])
-        else:
-            for text in idea_list + word_list:
-                feature_list.extend(self.feature_generator.gen_feature(text, duplicate=config.duplicate))
-
+        text = parts[7] + parts[8]
+        self.line_process_num += 1
+        feature_list = self.feature_generator.gen_feature(text, duplicate=config.duplicate)
         if self.line_process_num % 4000 == 0:
-            text = "||".join(parts[1:3])
-            text = re.sub(config.rex, "", text).strip()
             seg_text = "/ ".join(self.feature_generator.seg_words(text))
             log.debug("process line num #%d" % self.line_process_num)
             log.debug("origin  : %s" % text.encode("gb18030"))
             log.debug("="*150)
             log.debug("seg res : %s" % seg_text.encode("gb18030"))
         features = feature_list if config.duplicate else set(feature_list)
-        self.line_process_num += 1
-        return (label, " ".join(features))
-    
+        return (0, " ".join(features))
+
     def preprocess(self, data_dir):
+        """根据指定目录 获得数据特征
+        [out] train_data_vec: matrix, 数据集特征
         """
-        """
-        self.feature_label_gen = self.train_feature_label_gen
+        self.feature_label_gen = self.cluster_feature_label_gen
         self.line_process_num = 0
-        super(LRModelDemo, self).preprocess(
+
+        super(ClusterDemo, self).preprocess(
                 data_dir,
                 re_seg=config.re_seg,
                 to_file=config.to_file,
@@ -96,25 +83,24 @@ class LRModelDemo(BaseLRModel):
                 min_df=config.min_df,
                 )
 
-    def train(self):
+    def cluster(self,
+            data_path,
+            n_clusters=100,
+            params={'n_clusters': [5, 10, 20, 50, 75, 100]},
+            grid_search=True):
+        """根据数据特征进行聚类
         """
-        """
-        super(LRModelDemo, self).train(self.mid_data_paths.train_lib_format_path)
-
-    def eval(self):
-        """
-        """
-        self.feature_label_gen = self.train_feature_label_gen
-        self.line_process_num = 0
-        super(LRModelDemo, self).eval(self.mid_data_paths.val_data_path)
+        super(ClusterDemo, self).cluster(data_path, n_clusters, params, grid_search)
 
 
-if __name__ == "__main__":
-    labeler = LRModelDemo(
+def main():
+    cluster = ClusterDemo(
             mid_data_dir=config.mid_data_dir,
             model_dir=config.model_dir,
             output_dir=config.output_dir)
-    labeler.preprocess(
-            data_dir=config.train_data_dir)
-    labeler.train()
-    labeler.eval()
+    cluster.cluster(data_path=config.train_data_dir, grid_search=False)
+
+
+if __name__ == "__main__":
+    main()
+
