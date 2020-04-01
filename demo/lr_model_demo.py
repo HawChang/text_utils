@@ -18,10 +18,10 @@ import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../../" % _cur_dir)
 
-from text_utils.model.lr_model_impl import BaseLRModel
-from text_utils.preprocess import ProcessFilePath
-from text_utils.feature.feature_generator import FeatureGenerator
-from text_utils.utils.logger import Logger
+from model.lr_model_impl import BaseLRModel
+from preprocess import ProcessFilePath
+from feature.feature_generator import FeatureGenerator
+from utils.logger import Logger
 
 log = Logger().get_logger()
 
