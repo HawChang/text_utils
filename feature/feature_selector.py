@@ -13,8 +13,7 @@ Date: 2019/09/20 20:13:29
 """
 
 import sys
-reload(sys)
-sys.setdefaultencoding("gb18030")
+import logging
 
 import os
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,11 +25,7 @@ from sklearn.feature_selection import chi2
 from sklearn.feature_selection import SelectPercentile
 from sklearn.feature_selection import SelectKBest
 
-from utils.logger import Logger
 from utils.data_io import write_to_file
-
-
-log = Logger().get_logger()
 
 
 class FeatureSelector(object):
@@ -50,7 +45,7 @@ class FeatureSelector(object):
         
         select_conf = "select top "
         select_conf += "%d%%" % feature_keep_percent if is_percent else "%d" % feature_keep_num
-        log.info("select conf: %s." % select_conf)
+        logging.info("select conf: %s." % select_conf)
 
     def fit(self, feature_vec, label_vec, feature_name_vec, reserved_feature_file=None):
         """根据数据选择保留的特征
@@ -62,16 +57,16 @@ class FeatureSelector(object):
         """
         start_time = time.time()
         self._feature_selector.fit(feature_vec, label_vec)
-        log.info("feature select, cost time %.4fs" % (time.time() - start_time))
+        logging.info("feature select, cost time %.4fs" % (time.time() - start_time))
         
         reserved_mask = self._feature_selector.get_support(indices=False)
         if not isinstance(feature_name_vec, np.ndarray):
             feature_name_vec = np.array(feature_name_vec)
-        #log.info("feature_name_vec shape : %s" % str(feature_name_vec.shape))
+        #logging.info("feature_name_vec shape : %s" % str(feature_name_vec.shape))
         reserved_feature_name = feature_name_vec[reserved_mask]
-        #log.info("score shape : %s" % str(self._feature_selector.scores_.shape))
+        #logging.info("score shape : %s" % str(self._feature_selector.scores_.shape))
         reserved_feature_score = self._feature_selector.scores_[reserved_mask]
-        log.info("feature origin num %d, reserved num %d" % \
+        logging.info("feature origin num %d, reserved num %d" % \
                 (feature_vec.shape[1], len(reserved_feature_name)))
         
         if reserved_feature_file is not None:

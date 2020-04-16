@@ -13,6 +13,7 @@ Date: 2019/11/21 20:37:58
 """
 
 import codecs
+import logging
 import os
 import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,9 +25,6 @@ from lr_model import LRModel
 from preprocess import Preprocessor
 from utils.data_io import write_to_file
 from utils.for_def_user import LabelEncoder
-from utils.logger import Logger
-
-log = Logger().get_logger()
 
 class BaseLRModel(object):
     """LR分类模型基础类
@@ -43,11 +41,11 @@ class BaseLRModel(object):
         self.pred_res_path = os.path.join(output_dir, "pred_res.txt")
         self.wrong_pred_res_path = os.path.join(output_dir, "wrong_pred_res.txt")
         self.right_pred_res_path = os.path.join(output_dir, "right_pred_res.txt")
-        
+
         self.label_encoder = LabelEncoder(self.class_id_path)
         self.label_thres = BaseLRModel.load_label_thres(self.class_id_path)
         self.lr_model = LRModel()
-        #print("\n".join(["%s:%d" % x for x in self.label_encoder.label_id_dict.items()]).encode("gb18030"))
+        logging.debug("\n".join(["%s:%d" % x for x in self.label_encoder.label_id_dict.items()]))
 
     @staticmethod
     def load_label_thres(file_name):
@@ -119,12 +117,13 @@ class BaseLRModel(object):
         """
         raise NotImplementedError("function feature_label_gen should be over written.")
 
-    def train(self, train_lib_format_path):
+    def train(self, train_lib_format_path, liblinear_train_path):
         """
         """
         self.lr_model.liblinear_train(
                 train_lib_format_path,
-                self.model_path)
+                self.model_path,
+                liblinear_train_path)
 
         self.lr_model.save_in_feature_weight_format(
                 feature_weight_save_path=self.feature_weight_path,
@@ -135,7 +134,7 @@ class BaseLRModel(object):
         """
         """
         if not self.lr_model.model_loaded:
-            log.debug("model not loaded")
+            logging.debug("model not loaded")
             self.lr_model.load_model(
                     model_path=self.model_path,
                     feature_id_path=self.feature_id_path)

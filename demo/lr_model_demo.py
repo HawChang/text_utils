@@ -12,6 +12,7 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/11/21 20:37:58
 """
 
+import logging
 import os
 import re
 import sys
@@ -21,11 +22,11 @@ sys.path.append("%s/../../" % _cur_dir)
 from model.lr_model_impl import BaseLRModel
 from preprocess import ProcessFilePath
 from feature.feature_generator import FeatureGenerator
-from utils.logger import Logger
-
-log = Logger().get_logger()
+from utils.logger import init_log
+init_log("./log/lr_model.log")
 
 import config
+
 
 class LRModelDemo(BaseLRModel):
     """LR分类模型基础类
@@ -75,7 +76,7 @@ class LRModelDemo(BaseLRModel):
         features = feature_list if config.duplicate else set(feature_list)
         self.line_process_num += 1
         return (label, " ".join(features))
-    
+
     def preprocess(self, data_dir):
         """
         """
@@ -99,7 +100,9 @@ class LRModelDemo(BaseLRModel):
     def train(self):
         """
         """
-        super(LRModelDemo, self).train(self.mid_data_paths.train_lib_format_path)
+        super(LRModelDemo, self).train(
+                self.mid_data_paths.train_lib_format_path,
+                config.liblinear_train_path)
 
     def eval(self):
         """

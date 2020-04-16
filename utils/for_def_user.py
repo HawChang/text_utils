@@ -13,9 +13,6 @@ Date: 2019/11/08 10:39:02
 """
 
 import codecs
-from logger import Logger
-
-log = Logger().get_logger()
 
 class LabelEncoder(object):
     def __init__(self, label_id_info, isFile=True):
