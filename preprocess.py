@@ -13,12 +13,12 @@ Date: 2019/09/19 22:04:21
 """
 
 import sys
+import logging
 import time
 import warnings
 
 from sklearn.model_selection import train_test_split
 
-from utils.logger import Logger
 from utils.data_io import get_data
 from utils.data_io import write_to_file
 from utils.data_io import read_from_file
@@ -26,7 +26,6 @@ from utils.data_io import dump_libsvm_file
 from feature.feature_selector import FeatureSelector
 from feature.feature_vectorizer import init_vectorizer
 
-log = Logger().get_logger()
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
 class ProcessFilePath(object):
@@ -78,7 +77,7 @@ class Preprocessor(object):
         self.test_ratio = test_ratio
         self.min_df = min_df
 
-        log.info("Preprocessor init succeed")
+        logging.info("Preprocessor init succeed")
 
     def gen_data_vec(self,
             data_path,
@@ -107,7 +106,7 @@ class Preprocessor(object):
 
         # 首先根据数据集 生成数据的特征
         if re_seg:
-            log.info("gen data feature.")
+            logging.info("gen data feature.")
             start_time = time.time()
             data_list = get_data(data_path)
             # 调用函数 生成特征
@@ -118,16 +117,16 @@ class Preprocessor(object):
                 # 存储特征信息
                 write_to_file(feature_list, process_file_path.total_feature_path, \
                         write_func=lambda x : "%d\t%s" % x)
-            log.info("cost_time : %.4f" % (time.time() - start_time))
+            logging.info("cost_time : %.4f" % (time.time() - start_time))
         else:
-            log.info("load data feature.")
+            logging.info("load data feature.")
             start_time = time.time()
             # 加载已有的数据和特征列表
             data_list = read_from_file(process_file_path.total_data_path)
             feature_list = read_from_file(process_file_path.total_feature_path, \
                     read_func=lambda x: x.strip("\n").split("\t"))
             feature_list = [(int(x[0]), x[1]) for x in feature_list]
-            log.info("cost_time : %.4f" % (time.time() - start_time))
+            logging.info("cost_time : %.4f" % (time.time() - start_time))
         
         if split_train_test:
             # 划分训练集、验证集
@@ -177,17 +176,17 @@ class Preprocessor(object):
         elif to_file:
             write_to_file([(ind+1, x) for ind, x in enumerate(vectorizer.get_feature_names())],
                     feature_path, write_func=lambda x: "%d\t%s" % x)
-        log.info("train feature vec shape: %s." % str(train_feature_vec.shape))
+        logging.info("train feature vec shape: %s." % str(train_feature_vec.shape))
         if split_train_test:
-            log.info("test feature vec shape: %s." % str(val_feature_vec.shape))
+            logging.info("test feature vec shape: %s." % str(val_feature_vec.shape))
         
         if to_file:
-            log.info("trans to libsvm data file.")
+            logging.info("trans to libsvm data file.")
             start_time = time.time()
             dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
             if split_train_test:
                 dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
-            log.info("cost_time : %.4f" % (time.time() - start_time))
+            logging.info("cost_time : %.4f" % (time.time() - start_time))
         
         if not split_train_test:
             val_feature_vec = None
@@ -228,10 +227,10 @@ if __name__ == "__main__":
         if line_process_num % 4000 == 0:
             text = "||".join(parts[1:3])
             seg_text = "/ ".join(feature_generator.seg_words(text))
-            log.debug("process line num #%d" % line_process_num)
-            log.debug("origin  : %s" % text.encode("gb18030"))
-            log.debug("="*150)
-            log.debug("seg res : %s" % seg_text.encode("gb18030"))
+            logging.debug("process line num #%d" % line_process_num)
+            logging.debug("origin  : %s" % text.encode("gb18030"))
+            logging.debug("="*150)
+            logging.debug("seg res : %s" % seg_text.encode("gb18030"))
         features = feature_list if duplicate else set(feature_list)
         return (label, " ".join(features))
     

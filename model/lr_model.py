@@ -13,6 +13,7 @@ Date: 2019/09/23 14:03:51
 """
 
 import codecs
+import logging
 import math
 import os
 import subprocess
@@ -23,11 +24,8 @@ _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 
 from utils.data_io import read_from_file
-from utils.logger import Logger
 from utils.softmax import softmax
 
-
-log = Logger().get_logger()
 
 def argsort(number_list):
     """排序由小到大，但返回的是下标排序结果
@@ -46,7 +44,8 @@ class LRModel(object):
     def liblinear_train(self,
             train_data_path,
             model_path,
-            liblinear_train_path="/home/work/zhanghao55/tools/liblinear-2.20/train",
+            #liblinear_train_path="/home/work/zhanghao55/tools/liblinear-2.20/train",
+            liblinear_train_path="/home/users/zhanghao55/workspace/tools/liblinear-2.20/train",
             model_conf="-s 0"):
         """使用liblinear训练模型
         [in] train_data_path: str, 训练数据地址 liblinear训练数据格式
@@ -61,14 +60,14 @@ class LRModel(object):
         # liblinear工具地址
         assert os.path.isfile(liblinear_train_path), "%s is not a file." % liblinear_train_path
         try:
-            log.info("liblinear train start...")
+            logging.info("liblinear train start...")
             start_time = time.time()
             cmd_str =' '.join([
                     liblinear_train_path,
                     model_conf,
                     train_data_path,
                     model_path])
-            log.debug("cmd str: %s" % cmd_str)
+            logging.debug("cmd str: %s" % cmd_str)
             popen = subprocess.Popen(
                     cmd_str,
                     shell=True,
@@ -80,21 +79,21 @@ class LRModel(object):
             while popen.poll() is None:
                 # None表示正在执行中
                 r = popen.stdout.readline().strip("\n")
-                log.debug(r)
+                logging.debug(r)
 
             # 重定向错误输出
             if popen.poll() != 0:
                 # 不为0表示执行错误
                 err = popen.stderr.read().strip("\n")
-                log.error(err)
+                logging.error(err)
 
-            log.info("cost time %.4fs." % (time.time() - start_time))
+            logging.info("cost time %.4fs." % (time.time() - start_time))
         except subprocess.CalledProcessError as e:
-            log.warning("liblinear train failed.")
-            log.error(e)
+            logging.warning("liblinear train failed.")
+            logging.error(e)
             raise e
 
-        log.info("liblinear train finish")
+        logging.info("liblinear train finish")
 
     def load_model(self, model_path, feature_id_path):
         """根据liblinear生成的模型文件和特征保留文件加载feature_weight_dict
@@ -113,7 +112,7 @@ class LRModel(object):
         # 按类别值从小到大的顺序给出
         class_num = None
         feature_index = 0
-        log.debug("load model from file: %s." % model_path)
+        logging.debug("load model from file: %s." % model_path)
         start_time = time.time()
         with codecs.open(model_path, "r", "gb18030") as rf:
             for index, line in enumerate(rf):
@@ -127,7 +126,7 @@ class LRModel(object):
                     # index_transfer是类别数组，各列按类别的值(类别由LabelEncoder编码后,为整数，可比较)排序的结果
                     # index_transfer[i]=j表示，第i小的类别是第j列
                     index_transfer = argsort(labels)
-                    log.info("position rank: " + ",".join([str(x) for x in index_transfer]))
+                    logging.info("position rank: " + ",".join([str(x) for x in index_transfer]))
                     for class_index in range(class_num):
                         self.label_list.append(str(labels[index_transfer[class_index]]))
 
@@ -136,15 +135,25 @@ class LRModel(object):
 
                 # liblinear权值文件 最后会有一个空格
                 weights = line.strip(" ").split(" ")
-                assert len(weights) == class_num, "wrong weight num at line #%d, expect %d, actual %d." \
+                assert len(weights) == class_num or class_num == 2, "wrong weight num at line #%d, expect %d, actual %d." \
                         % (index+1, class_num, len(weights))
                 reordered_weights = list()
-                for weight_index in range(class_num):
-                    reordered_weights.append(float(weights[index_transfer[weight_index]]))
+                if class_num > 2:
+                    for weight_index in range(class_num):
+                        reordered_weights.append(float(weights[index_transfer[weight_index]]))
+                else:
+                    # 二分类时 liblinear权重只有一维 该权重是第一个label的权重 该权重取反作为第二个label的权重
+                    # 此时weights只有一列
+                    reordered_weights = [0, 0]
+                    # 权值是针对第一个label的
+                    reordered_weights[index_transfer[0]] = float(weights[0])
+                    # 第二个label为该权值取反
+                    reordered_weights[index_transfer[1]] = -float(weights[0])
+
                 self.feature_weight_dict[self.feature_name_list[feature_index]] = reordered_weights
                 self.softmax_feature_weight_dict[self.feature_name_list[feature_index]] = softmax(reordered_weights, axis=1)
                 feature_index += 1
-        log.info("cost time %.4fs." % (time.time() - start_time))
+        logging.info("cost time %.4fs." % (time.time() - start_time))
         self.model_loaded = True
 
     def save_in_feature_weight_format(
@@ -159,20 +168,20 @@ class LRModel(object):
         """
 
         if not self.model_loaded:
-            log.debug("model not loaded")
+            logging.debug("model not loaded")
             # load model时 会生成self.feature_name_list和self.feature_weight_dict
             if model_path is None or feature_id_path is None:
                 raise ValueError("model_path and feature_id_path are required when loading model")
             self.load_model(model_path, feature_id_path)
 
-        log.debug("gen_feature_weight_file start...")
+        logging.debug("gen_feature_weight_file start...")
         start_time = time.time()
         with codecs.open(feature_weight_save_path, "w", "gb18030") as wf:
             wf.write("classes: %s" % ",".join(self.label_list))
             for index, feature_name in enumerate(self.feature_name_list):
                 weight_str = " ".join(["%.20f" % x for x in self.feature_weight_dict[feature_name]])
                 wf.write("\n" + "\t".join([str(index), feature_name, weight_str]))
-        log.debug("cost time %.4fs." % (time.time() - start_time))
+        logging.debug("cost time %.4fs." % (time.time() - start_time))
 
     def check(self, features, min_conf=0.05, digits=4, evidence=False, topk=10):
         """根据特征列表预测结果
@@ -200,13 +209,13 @@ class LRModel(object):
                     print("index error. index = %d." % index)
                     raise e
     
-        #log.debug("label_weght_sum: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
+        #logging.debug("label_weght_sum: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
     
         for label, sum_weight in label_value.items():
             label_value[label] = 1.0 / (1.0 + math.exp(-sum_weight))
             total += label_value[label]
     
-        #log.debug("label_value: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
+        #logging.debug("label_value: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
         digits_format = "%%.%df" % digits
         pred_list = list()
         for label, weight_pred in sorted(label_value.items(), key=lambda x: x[1], reverse=True):

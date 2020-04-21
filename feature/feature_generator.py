@@ -13,9 +13,7 @@ Date: 2019/09/20 16:00:37
 """
 
 import sys
-reload(sys)
-sys.setdefaultencoding("gb18030")
-
+import logging
 import os
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
@@ -24,9 +22,7 @@ from utils.word_segger import WordSegger
 from utils.data_io import read_from_file
 from utils.data_io import dump_pkl
 from utils.data_io import load_pkl
-from utils.logger import Logger
 
-log = Logger().get_logger()
 
 class FeatureGenerator(object):
     def __init__(self,
@@ -67,12 +63,12 @@ class FeatureGenerator(object):
         # 得到切词结果 切词结果为字符串列表 unicode编码
         tokens = self._segger.seg_words(text)
         if verbose:
-            log.debug("tar string   : %s" % text.encode("gb18030"))
-            log.debug("seg result   : %s" % "/ ".join(tokens).encode("gb18030"))
+            logging.debug("tar string   : %s" % text.encode("gb18030"))
+            logging.debug("seg result   : %s" % "/ ".join(tokens).encode("gb18030"))
         # 去除停用词
         valid_tokens = [x for x in tokens if len(x.strip()) != 0 and x not in self._stopwords]
         if verbose:
-            log.debug("valid tokens : %s" % "/ ".join(valid_tokens).encode("gb18030"))
+            logging.debug("valid tokens : %s" % "/ ".join(valid_tokens).encode("gb18030"))
         return valid_tokens
 
     def gen_ngram_feature(self, token_list, duplicate=False):

@@ -12,16 +12,14 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/09/19 20:44:30
 """
 
+
 import codecs
+import logging
 import os
 import pickle
 import time
 
 from sklearn.datasets import dump_svmlight_file
-
-from logger import Logger
-
-log = Logger().get_logger()
 
 
 def get_data(data_path, read_func=lambda x:x, encoding="gb18030", verbose=False):
@@ -33,7 +31,7 @@ def get_data(data_path, read_func=lambda x:x, encoding="gb18030", verbose=False)
     file_list = get_file_name_list(data_path, verbose)
     data = list()
     for file_path in file_list:
-        data.extend(read_from_file(file_path, read_func))
+        data.extend(read_from_file(file_path, read_func, encoding))
     return data
 
 
@@ -51,10 +49,10 @@ def get_file_name_list(data_path, verbose=False):
     path_stack.append(data_path)
     while len(path_stack) != 0:
         cur_path = path_stack.pop()
-        log.debug("check data path: %s." % cur_path)
+        logging.debug("check data path: %s." % cur_path)
         # 首先检查原始数据是文件还是文件夹
         if os.path.isdir(cur_path):
-            #log.debug("data path is directory.")
+            #logging.debug("data path is directory.")
             files = os.listdir(cur_path)
             # 遍历文件夹中的每一个文件
             for file_name in files:
@@ -64,14 +62,14 @@ def get_file_name_list(data_path, verbose=False):
                 file_path = os.path.join(cur_path, file_name)
                 path_stack.append(file_path)
         elif os.path.isfile(cur_path):
-            #log.info("data path is file. add to list.")
+            #logging.info("data path is file. add to list.")
             file_list.append(cur_path)
         else:
             raise TypeError("unknown type of data path : %s" % cur_path)
 
-    log.info("file list top 20:")
+    logging.info("file list top 20:")
     for index, file_name in enumerate(file_list[:20]):
-        log.info("#%d: %s" % (index + 1, file_name))
+        logging.info("#%d: %s" % (index + 1, file_name))
     return file_list
 
 
@@ -112,13 +110,13 @@ def dump_pkl(obj, pkl_path, overwrite=False):
           overwrite: bool, 是否覆盖，False则当文件存在时不存储
     """
     if len(pkl_path) == 0 or pkl_path is None:
-        log.warning("pkl_path(\"%s\") illegal." % pkl_path)
+        logging.warning("pkl_path(\"%s\") illegal." % pkl_path)
     elif os.path.exists(pkl_path) and not overwrite:
-        log.warning("pkl_path(\"%s\") already exist and not over write." % pkl_path)
+        logging.warning("pkl_path(\"%s\") already exist and not over write." % pkl_path)
     else:
         with open(pkl_path, 'wb') as wf:
             pickle.dump(obj, wf)
-        log.debug("save to \"%s\" succeed." % pkl_path)
+        logging.debug("save to \"%s\" succeed." % pkl_path)
 
 
 def label_encoder_save_as_class_id(label_encoder, class_id_path, conf_thres = 0.5):
@@ -130,7 +128,7 @@ def label_encoder_save_as_class_id(label_encoder, class_id_path, conf_thres = 0.
     class_id_list = ["%d\t%s\t%f" % (index, str(class_name), conf_thres) for \
             index, class_name in enumerate(label_encoder.classes_)]
     write_to_file(class_id_list, class_id_path)
-    log.debug("trans label_encoder to \"%s\" succeed." % class_id_path)
+    logging.debug("trans label_encoder to \"%s\" succeed." % class_id_path)
 
 
 def dump_libsvm_file(X, y, file_path, zero_based=False):
@@ -140,7 +138,10 @@ def dump_libsvm_file(X, y, file_path, zero_based=False):
           file_path: string、file-like in binary model, 文件地址，或者二进制形式打开的可写文件
           zero_based: bool, true则特征id从0开始 liblinear训练时要求特征id从1开始 因此一般需要为False
     """
-    log.debug("trans libsvm format data to %s." % file_path)
+    logging.debug("trans libsvm format data to %s." % file_path)
     start_time = time.time()
     dump_svmlight_file(X, y, file_path, zero_based=zero_based)
-    log.info("cost_time : %.4fs" % (time.time() - start_time))
+    logging.info("cost_time : %.4fs" % (time.time() - start_time))
+
+if __name__ == "__main__":
+    get_file_name_list("jinyong")

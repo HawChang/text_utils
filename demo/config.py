@@ -12,16 +12,16 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/11/21 20:53:39
 """
 
-# 璁粌鍙傛暟
+# 训练参数
 re_seg = True
 split_train_test = True
 feature_select = True
 
 
-# 璁粌闆嗛獙璇侀泦鍙傛暟
+# 训练集验证集参数
 test_ratio = 0.2
 
-# 鐗瑰緛鐢熸垚鍙傛暟
+# 特征生成参数
 duplicate = False
 idea_word_feature_sep = False
 seg_method = "word_seg"
@@ -31,17 +31,18 @@ ngram = 3
 feature_min_length = 2
 
 
-# 鐗瑰緛閫夋嫨鍙傛暟
+# 特征选择参数
 vec_method = "count"
 feature_keep_percent = 90
 feature_keep_num = 10
 is_percent = True
 min_df = 3
-rex = u"{鍏抽敭璇峿|{鎶曟斁鍦板煙}|{鍦板煙}|{|}"
+rex = u"{关键词}|{投放地域}|{地域}|{|}"
 
 
 to_file = True
-# 妯″瀷璁粌鏃跺悇鏁版嵁鍦板潃
+# 模型训练时各数据地址
+liblinear_train_path = "/home/work/zhanghao55/tools/liblinear-2.20/train"
 train_data_dir = "./data/train_data/"
 mid_data_dir = "./local_data/"
 model_dir = "./model/"
