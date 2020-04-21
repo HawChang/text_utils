@@ -39,14 +39,14 @@ class ProcessFilePath(object):
         # 中间数据地址
         self.total_data_path = self.output_dir + "/total_data.txt"
         self.train_data_path = self.output_dir + "/train_data.txt"
-        self.val_data_path = self.output_dir + "/test_data.txt"
+        self.val_data_path = self.output_dir + "/val_data.txt"
 
         self.total_feature_path = self.output_dir + "/total_feature.txt"
         self.train_feature_path = self.output_dir + "/train_feature.txt"
-        self.val_feature_path = self.output_dir + "/test_feature.txt"
+        self.val_feature_path = self.output_dir + "/val_feature.txt"
 
         self.train_lib_format_path = self.output_dir + "/train_lib_format.txt"
-        self.val_lib_format_path = self.output_dir + "/test_lib_format.txt"
+        self.val_lib_format_path = self.output_dir + "/val_lib_format.txt"
 
 
 class Preprocessor(object):
