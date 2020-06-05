@@ -2,28 +2,32 @@
 # -*- coding: gb18030 -*-
 ########################################################################
 # 
-# Copyright (c) 2019 Baidu.com, Inc. All Rights Reserved
+# Copyright (c) 2020 Baidu.com, Inc. All Rights Reserved
 # 
 ########################################################################
  
 """
-File: lr_model_impl.py
+File: lr_model_multilabel_impl.py
 Author: zhanghao55(zhanghao55@baidu.com)
-Date: 2019/11/21 20:37:58
+Date: 2020/06/03 20:05:39
 """
 
 import codecs
+import json
 import logging
 import os
 import sys
+import time
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 
 from sklearn.metrics import classification_report
 
-from lr_model import LRModel
+from lr_model_multilabel import LRModelMultiLabel
 from preprocess import Preprocessor
 from utils.data_io import write_to_file
+from utils.data_io import dump_pkl
+from utils.data_io import load_pkl
 from utils.for_def_user import LabelEncoder
 
 class BaseLRModel(object):
@@ -34,9 +38,9 @@ class BaseLRModel(object):
         """
         self.feature_id_path = os.path.join(model_dir, "feature_id.txt")
         self.class_id_path = os.path.join(model_dir, "class_id.txt")
-        self.model_path = os.path.join(model_dir, "model.txt")
+        self.model_path = os.path.join(model_dir, "model")
         self.feature_weight_path = os.path.join(model_dir, "feature_weight.txt")
-        self.generator_path = os.path.join(model_dir, "generator.pkl")
+        self.vectorizer_path = os.path.join(model_dir, "vectorizer.pkl")
 
         self.pred_res_path = os.path.join(output_dir, "pred_res.txt")
         self.wrong_pred_res_path = os.path.join(output_dir, "wrong_pred_res.txt")
@@ -44,7 +48,7 @@ class BaseLRModel(object):
 
         self.label_encoder = LabelEncoder(self.class_id_path)
         self.label_thres = BaseLRModel.load_label_thres(self.class_id_path)
-        self.lr_model = LRModel()
+        self.lr_model_mult = LRModelMultiLabel()
         logging.debug("\n".join(["%s:%d" % x for x in self.label_encoder.label_id_dict.items()]).encode("gb18030"))
 
     @staticmethod
@@ -81,11 +85,12 @@ class BaseLRModel(object):
             data_dir,
             re_seg=True,
             to_file=False,
+            libsvm_format=False,
             mid_data_paths=None,
             split_train_test=True,
             test_ratio=0.2,
             vec_method="count",
-            feature_select=True,
+            feature_select=False,
             is_percent=True,
             feature_keep_percent=90,
             feature_keep_num=10,
@@ -101,14 +106,18 @@ class BaseLRModel(object):
                 test_ratio=test_ratio,
                 min_df=min_df)
 
-        _, train_data, train_label, val_data, val_label = preprocessor.gen_data_vec(
+        self.vectorizer, train_data, train_label, val_data, val_label = preprocessor.gen_data_vec(
                 data_dir,
                 self.feature_id_path,
                 split_train_test=split_train_test,
                 feature_select=feature_select,
                 to_file=to_file,
+                libsvm_format=libsvm_format,
                 re_seg=re_seg,
                 process_file_path=mid_data_paths)
+
+        # 保存vectorizer
+        dump_pkl(self.vectorizer, self.vectorizer_path, True)
 
     def feature_label_gen(self, line):
         """根据字符串 提取其类别、特征 组成二元组
@@ -117,50 +126,45 @@ class BaseLRModel(object):
         """
         raise NotImplementedError("function feature_label_gen should be over written.")
 
-    def train(self, train_lib_format_path, liblinear_train_path):
+    def train(self, train_pkl_path):
         """
         """
-        self.lr_model.liblinear_train(
-                train_lib_format_path,
-                self.model_path,
-                liblinear_train_path)
+        logging.info("load train data")
+        start_time = time.time()
+        # train_label此时为json字符串
+        train_feature_vec, train_label = load_pkl(train_pkl_path)
+        # 将每个train_label转为list
+        train_label = [json.loads(x) for x in train_label]
+        logging.info("cost_time : %.4f" % (time.time() - start_time))
 
-        self.lr_model.save_in_feature_weight_format(
-                feature_weight_save_path=self.feature_weight_path,
-                model_path=self.model_path,
-                feature_id_path=self.feature_id_path)
+        self.lr_model_mult.train(
+                train_feature_vec,
+                train_label)
+
+        self.lr_model_mult.save(self.model_path, overwrite=True)
 
     def eval(self, val_data_path):
         """
         """
-        if not self.lr_model.model_loaded:
+        if not self.lr_model_mult.model_loaded:
             logging.debug("model not loaded")
-            self.lr_model.load_model(
-                    model_path=self.model_path,
-                    feature_id_path=self.feature_id_path)
+            self.lr_model_mult.load_model(self.model_path)
 
-        pred_label_list = list()
-        real_label_list = list()
+        if not hasattr(self, "vectorizer"):
+            self.vectorizer = load_pkl(self.vectorizer_path)
+
+        #pred_label_list = list()
+        #real_label_list = list()
         pred_info_list = list()
-        wrong_info_list = list()
+        #wrong_info_list = list()
         with codecs.open(val_data_path, "r", "gb18030") as rf:
             for line in rf:
                 line = line.strip("\n")
                 real_label, feature_str = self.feature_label_gen(line)
-                features = feature_str.split(" ")
-                pred_list = self.check(features)
-                # get the first pred label
-                pred_label_name, label_prob, label_evidence = pred_list[0]
-                real_label_name = self.label_encoder.inverse_transform(int(real_label))
-                real_label_list.append(real_label_name)
-                pred_label_list.append(pred_label_name)
-                info = "\t".join([pred_label_name, label_prob, line, label_evidence])
-                pred_info_list.append(info)
-                if pred_label_name != real_label_name:
-                    wrong_info_list.append(info)
+                feature_vec = self.vectorizer.transform([feature_str])
+                pred_list = list(self.lr_model_mult.check(feature_vec)[0])
+                pred_info_list.append("\t".join([json.dumps(pred_list), line]))
         write_to_file(pred_info_list, self.pred_res_path)
-        write_to_file(wrong_info_list, self.wrong_pred_res_path)
-        print(classification_report(real_label_list, pred_label_list, digits=4).encode("gb18030"))
 
 
 if __name__ == "__main__":

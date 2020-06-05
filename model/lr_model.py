@@ -196,6 +196,8 @@ class LRModel(object):
         label_value = defaultdict(lambda: 0.0)
         total = 0.0
         evidence_dict = defaultdict(list)
+        #hit_feature = set(features) & set(self.feature_weight_dict.keys())
+        #print("hit features: {}".format(" ".join(sorted(hit_feature)).encode("gb18030")))
         for feature in features:
             if feature not in self.feature_weight_dict:
                 continue

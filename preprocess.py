@@ -23,6 +23,7 @@ from utils.data_io import get_data
 from utils.data_io import write_to_file
 from utils.data_io import read_from_file
 from utils.data_io import dump_libsvm_file
+from utils.data_io import dump_pkl
 from feature.feature_selector import FeatureSelector
 from feature.feature_vectorizer import init_vectorizer
 
@@ -46,6 +47,9 @@ class ProcessFilePath(object):
 
         self.train_lib_format_path = self.output_dir + "/train_lib_format.txt"
         self.val_lib_format_path = self.output_dir + "/val_lib_format.txt"
+
+        self.train_pkl_path = self.output_dir + "/train_data.pkl"
+        self.val_pkl_path = self.output_dir + "/val_data.pkl"
 
 
 class Preprocessor(object):
@@ -85,6 +89,7 @@ class Preprocessor(object):
             split_train_test=False,
             feature_select=False,
             to_file=True,
+            libsvm_format=True,
             re_seg=True,
             process_file_path=None):
         """根据给定数据集地址 生成特征
@@ -93,6 +98,7 @@ class Preprocessor(object):
               split_train_test: bool, true则划分测试集训练集
               feature_select: bool, true则进行特征选择
               to_file: bool, true则中间数据会被存储
+              libsvm_format: bool, true则训练数据被转为libsvm格式
               re_seg: bool, 是否重新从原始数据生成全部数据的特征信息
               process_file_path: ProcessFilePath, 预处理时各文件地址
         [out] train_feature_vec: matrix, 训练数据特征矩阵
@@ -116,7 +122,7 @@ class Preprocessor(object):
                 write_to_file(data_list, process_file_path.total_data_path)
                 # 存储特征信息
                 write_to_file(feature_list, process_file_path.total_feature_path, \
-                        write_func=lambda x : "%d\t%s" % x)
+                        write_func=lambda x : "{}\t{}".format(x[0], x[1]))
             logging.info("cost_time : %.4f" % (time.time() - start_time))
         else:
             logging.info("load data feature.")
@@ -181,18 +187,26 @@ class Preprocessor(object):
             logging.info("test feature vec shape: %s." % str(val_feature_vec.shape))
         
         if to_file:
-            logging.info("trans to libsvm data file.")
-            start_time = time.time()
-            dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
-            if split_train_test:
-                dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
-            logging.info("cost_time : %.4f" % (time.time() - start_time))
+            if libsvm_format:
+                logging.info("trans to libsvm data file.")
+                start_time = time.time()
+                dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
+                if split_train_test:
+                    dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
+                logging.info("cost_time : %.4f" % (time.time() - start_time))
+            else:
+                logging.info("dump data to pkl.")
+                start_time = time.time()
+                dump_pkl((train_feature_vec, train_label), process_file_path.train_pkl_path, True)
+                if split_train_test:
+                    dump_pkl((val_feature_vec, val_label), process_file_path.val_pkl_path, True)
+                logging.info("cost_time : %.4f" % (time.time() - start_time))
         
         if not split_train_test:
             val_feature_vec = None
             val_label = None
 
-        return  train_feature_vec, train_label, val_feature_vec, val_label
+        return  vectorizer, train_feature_vec, train_label, val_feature_vec, val_label
 
 
 if __name__ == "__main__":

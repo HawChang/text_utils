@@ -12,6 +12,7 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2020/03/23 11:25:43
 """
 
+import logging
 import os
 import sys
 import time
@@ -24,15 +25,13 @@ from sklearn.metrics import make_scorer
 from cluster import cluster_score
 from cluster import data_cluster
 from cluster import mini_batch_kmeans
-from utils.logger import Logger
+from utils.data_io import get_data
 from utils.data_io import read_from_file
 from utils.data_io import write_to_file
 from utils.parameter_optimizer import grid_search_cv
-from utils.file_manager import FileManager
 from feature.feature_generator import FeatureGenerator
 from preprocess import Preprocessor
 
-log = Logger().get_logger()
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
 duplicate = False
@@ -49,7 +48,7 @@ class BaseCluster(object):
         self.cluster_res_path = os.path.join(output_dir, "cluster_res.txt")
 
         self.line_process_num = 0
-        log.info("BaseCluster init succeed")
+        logging.info("BaseCluster init succeed")
 
     def feature_label_gen(self, line):
         """根据字符串 提取其类别、特征 组成二元组
@@ -84,7 +83,7 @@ class BaseCluster(object):
                 min_df=min_df)
 
         # 根据数据生成特征
-        self.train_data_vec, _, _, _ = preprocessor.gen_data_vec(
+        _, self.train_data_vec, _, _, _ = preprocessor.gen_data_vec(
                 data_dir,
                 self.feature_id_path,
                 split_train_test=split_train_test,
@@ -119,9 +118,9 @@ class BaseCluster(object):
             cluster_model = mini_batch_kmeans(n_clusters=n_clusters, max_no_improvement=10000)
             data_cluster(cluster_model, self.train_data_vec)
 
-        log.debug("score : %.4f" % cluster_score(self.train_data_vec, cluster_model.labels_))
+        logging.debug("score : %.4f" % cluster_score(self.train_data_vec, cluster_model.labels_))
         cluster_ids = cluster_model.labels_
-        train_data = read_from_file(data_path)
+        train_data = get_data(data_path)
         if self.cluster_res_path is not None:
             write_to_file(sorted(zip(cluster_ids, train_data), key=lambda x:x[0]), self.cluster_res_path, write_func=lambda x: "%s\t%s" % x)
 
