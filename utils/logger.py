@@ -17,7 +17,7 @@ import logging
 import logging.handlers
 
 def init_log(
-        log_path,
+        log_path=None,
         stream_level=logging.DEBUG,
         file_level=logging.DEBUG,
         when="D",
@@ -60,6 +60,8 @@ def init_log(
     consoleHandler.setFormatter(formatter)
     logger.addHandler(consoleHandler)
 
+    if log_path is None:
+        return
     dir = os.path.dirname(log_path)
     if not os.path.isdir(dir):
         os.makedirs(dir)
