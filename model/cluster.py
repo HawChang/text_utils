@@ -36,7 +36,9 @@ def cluster_score(X, y_pred):
     [out] score: double, 聚类效果得分
     """
     try:
-        score = calinski_harabaz_score(X.toarray(), y_pred)
+        if not isinstance(X, np.ndarray):
+            X = X.toarray()
+        score = calinski_harabaz_score(X, y_pred)
         logging.info("Calinski-Harabasz Score : %.4f" % score)
     except ValueError as e:
         score = -1.0
