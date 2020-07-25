@@ -12,8 +12,9 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/09/19 20:44:30
 """
 
-
 import codecs
+from collections import defaultdict
+from collections import namedtuple
 import logging
 import os
 import pickle
@@ -22,17 +23,19 @@ import time
 from sklearn.datasets import dump_svmlight_file
 
 
-def get_data(data_path, read_func=lambda x:x, encoding="gb18030", verbose=False):
+def get_data(data_path, read_func=lambda x:x, header=False, encoding="gb18030", verbose=False):
     """获取该文件(或目录下所有文件)的数据
     [in]  data_path : str, 数据集地址
           verbose   : bool, 是否展示处理信息
     [out] data : list[str], 该文件(或目录下所有文件)的数据
     """
     file_list = get_file_name_list(data_path, verbose)
-    data = list()
-    for file_path in file_list:
-        data.extend(read_from_file(file_path, read_func, encoding))
-    return data
+    for file_index, file_path in enumerate(file_list):
+        for line_index, line in enumerate(read_from_file(file_path, read_func, encoding)):
+            if header and file_index != 0 and line_index == 0:
+                # 如果有表头 则除第一个文件外 每个文件的第一行省略
+                continue
+            yield line
 
 
 def get_file_name_list(data_path, verbose=False):
@@ -73,16 +76,41 @@ def get_file_name_list(data_path, verbose=False):
     return file_list
 
 
+def get_attr_values(data_dir, fetch_list, encoding="gb18030"):
+    """返回带字段名的数据中，指定字段的数据
+    [in]  data_dir: str, 数据集地址
+          fetch_list: list[str], 指定的字段名列表
+    [out] res_list: list[list[str]], 各指定的字段名的数据列表
+    """
+    data_ite = get_data(data_dir,
+            read_func=lambda x: x.rstrip("\n").split("\t"),
+            encoding=encoding)
+    headers = next(data_ite)
+    Example = namedtuple("Example", headers)
+
+    res_dict = defaultdict(list)
+    for row in data_ite:
+        cur_example = Example(*row)
+        for attr_name in fetch_list:
+            res_dict[attr_name].append(getattr(cur_example, attr_name))
+
+    res_list = list()
+    for attr_name in fetch_list:
+        res_list.append(res_dict[attr_name])
+
+    return res_list
+
+
 def read_from_file(file_path, read_func=lambda x:x, encoding="gb18030"):
     """加载文件中的词
     [in] file_path: str, 文件地址
     [out] word_list: list[str], 单词列表
     """
-    word_list = list()
     with codecs.open(file_path, "r", encoding) as rf:
         for line in rf:
-            word_list.append(read_func(line.strip("\n")))
-    return word_list
+            res = read_func(line.strip("\n"))
+            if res is not None:
+                yield res
 
 
 def write_to_file(text_list, dst_file_path, write_func=lambda x:x, encoding="gb18030"):
@@ -91,7 +119,13 @@ def write_to_file(text_list, dst_file_path, write_func=lambda x:x, encoding="gb1
           dst_file_path: str, 目的文件地址
     """
     with codecs.open(dst_file_path, "w", encoding) as wf:
-        wf.write("\n".join([write_func(x) for x in text_list]))
+        # 不能直接全部join 有些数据过大 应该for
+        #wf.write("\n".join([write_func(x) for x in text_list]))
+        for text in text_list:
+            res = write_func(text)
+            if res is None:
+                continue
+            wf.write(res + "\n")
 
 
 def load_pkl(pkl_path):
