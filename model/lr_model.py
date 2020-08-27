@@ -101,8 +101,8 @@ class LRModel(object):
               feature_id: str, 特征字面文件地址, 其顺序应与liblinear模型文件中特征的顺序一致
         """
 
-        self.feature_name_list = read_from_file(feature_id_path, \
-                read_func=lambda x: x.strip("\n").split("\t")[1])
+        self.feature_name_list = list(read_from_file(feature_id_path, \
+                read_func=lambda x: x.strip("\n").split("\t")[1]))
         
         self.label_list = list()
         self.feature_weight_dict = dict()

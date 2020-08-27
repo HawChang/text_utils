@@ -16,8 +16,10 @@ import codecs
 from collections import defaultdict
 from collections import namedtuple
 import logging
-import os
+import numpy as np
+import paddle.fluid.dygraph as D
 import pickle
+import os
 import time
 
 from sklearn.datasets import dump_svmlight_file
@@ -84,7 +86,8 @@ def get_attr_values(data_dir, fetch_list, encoding="gb18030"):
     """
     data_ite = get_data(data_dir,
             read_func=lambda x: x.rstrip("\n").split("\t"),
-            encoding=encoding)
+            encoding=encoding,
+            header=True)
     headers = next(data_ite)
     Example = namedtuple("Example", headers)
 
@@ -122,6 +125,7 @@ def write_to_file(text_list, dst_file_path, write_func=lambda x:x, encoding="gb1
         # 不能直接全部join 有些数据过大 应该for
         #wf.write("\n".join([write_func(x) for x in text_list]))
         for text in text_list:
+            #print(text)
             res = write_func(text)
             if res is None:
                 continue
@@ -176,6 +180,64 @@ def dump_libsvm_file(X, y, file_path, zero_based=False):
     start_time = time.time()
     dump_svmlight_file(X, y, file_path, zero_based=zero_based)
     logging.info("cost_time : %.4fs" % (time.time() - start_time))
+
+
+def load_model(init_model, model_path):
+    if os.path.exists(model_path + ".pdparams"):
+        logging.info("load model from {}".format(model_path))
+        start_time = time.time()
+        sd, _ = D.load_dygraph(model_path)
+        init_model.set_dict(sd)
+        logging.info("cost time: %.4fs" % (time.time() - start_time))
+    else:
+        logging.info("cannot find model file: {}".format(model_path + ".pdparams"))
+
+
+def gen_batch_data(data_iter, batch_size=32, max_seq_len=300, max_ensure=False, with_label=True):
+    batch_data = list()
+
+    def pad(data_list):
+        # 处理样本
+        # 确定当前批次最大长度
+        if max_ensure:
+            cur_max_len = max_seq_len
+        else:
+            cur_max_len = max([len(x) for x in data_list])
+            cur_max_len = max_seq_len if cur_max_len > max_seq_len else cur_max_len
+
+        # padding
+        return [np.pad(x[:cur_max_len], [0, cur_max_len-len(x[:cur_max_len])], mode='constant') for x in data_list]
+
+    def batch_process(cur_batch_data, cur_batch_size):
+        batch_list = list()
+        data_lists = zip(*cur_batch_data)
+        #print("cur batch_size = {}".format(cur_batch_size))
+        if with_label:
+            label_list = data_lists[-1]
+            data_lists = data_lists[:-1]
+
+        for data_list in data_lists:
+            #print(data_list)
+            data_list = pad(data_list)
+            data_np = np.array(data_list).reshape([cur_batch_size, -1])
+            batch_list.append(data_np)
+
+        if with_label:
+            label_np = np.array(label_list).reshape([cur_batch_size, -1])
+            batch_list.append(label_np)
+
+        return batch_list
+
+    for data in data_iter:
+        if len(batch_data) == batch_size:
+            # 当前已组成一个batch
+            yield batch_process(batch_data, batch_size)
+            batch_data = list()
+        batch_data.append(data)
+
+    if len(batch_data) > 0:
+        yield batch_process(batch_data, len(batch_data))
+
 
 if __name__ == "__main__":
     get_file_name_list("jinyong")

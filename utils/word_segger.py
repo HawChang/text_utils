@@ -33,16 +33,20 @@ class WordSegger(object):
         [in]  text: str, 待切词字符串， unicode或gb18030编码
         [out] seg_list: list[str], 切词结果，unicode编码
         """
+        if isinstance(text, unicode):
+            text = text.encode("gb18030", "ignore")
         # 内部切词函数接受gbk编码字符串
-        return [x.decode("gb18030") for x in self._segger.seg_words(text.encode("gb18030", "ignore"))]
+        return [x.decode("gb18030") for x in self._segger.seg_words(text)]
 
     def jieba_seg_words(self, text):
         """使用结巴进行分词
         [in]  text: str, 待切词字符串，unicode或gb18030编码
         [out] seg_list: list[str], 切词结果，unicode编码
         """
+        if isinstance(text, unicode):
+            text = text.encode("gb18030", "ignore")
         # jieba分词结果是unicode编码
-        return [x for x in jieba.lcut(text.encode("gb18030", "ignore"))]
+        return [x for x in jieba.lcut(text)]
     
     def destroy(self):
         """内部切词工具需要释放内存
@@ -66,5 +70,7 @@ if __name__ == "__main__":
     print(line.encode("gb18030"))
     print("="*150)
     print(seg_line.encode("gb18030"))
+
+    print(" ".join(segger.seg_words(u"登基失败后被假圣旨赐死，史上最悲催的太子是谁？")).encode("gb18030"))
 
     segger.destroy()

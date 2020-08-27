@@ -23,7 +23,16 @@ class LabelEncoder(object):
         if isFile:
             self.label_id_dict = self.load_class_id_file(label_id_info)
         else:
-            self.label_id_dict = label_id_info
+            if isinstance(label_id_info, dict):
+                 self.label_id_dict = label_id_info
+            elif isinstance(label_id_info, list) or isinstance(label_id_info, set) or isinstance(label_id_info, tuple):
+                 self.label_id_dict = dict()
+                 for label in label_id_info:
+                     if label in self.label_id_dict:
+                         continue
+                     self.label_id_dict[label] = len(self.label_id_dict)
+            else:
+                raise ValueError("unknown label_id_info type: {}".format(type(label_id_info)))
         self.id_label_dict = {v:k for k,v in self.label_id_dict.items()}
         assert len(self.label_id_dict) == len(self.id_label_dict), "dict is has duplicate key or value."
 

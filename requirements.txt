@@ -1,0 +1,6 @@
+gensim==3.8.3
+jieba==0.42.1
+numpy==1.16.1
+paddle-ernie==0.0.4.dev1
+pandas==0.24.2
+paddlepaddle-gpu==1.8.1.post107
