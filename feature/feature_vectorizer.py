@@ -13,8 +13,6 @@ Date: 2019/09/20 21:04:00
 """
 
 import sys
-reload(sys)
-sys.setdefaultencoding("gb18030")
 
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
