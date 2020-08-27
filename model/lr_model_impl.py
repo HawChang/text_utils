@@ -14,6 +14,7 @@ Date: 2019/11/21 20:37:58
 
 import codecs
 import logging
+import numpy as np
 import os
 import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -161,6 +162,15 @@ class BaseLRModel(object):
         write_to_file(pred_info_list, self.pred_res_path)
         write_to_file(wrong_info_list, self.wrong_pred_res_path)
         print(classification_report(real_label_list, pred_label_list, digits=4).encode("gb18030"))
+
+        real_label_list = np.array(real_label_list)
+        pred_label_list = np.array(pred_label_list)
+        correct_num = sum(real_label_list==pred_label_list)
+        total_num = len(real_label_list)
+        acc = correct_num / float(total_num)
+        print("acc = %.4f(%d/%d)" % (acc, correct_num, total_num))
+        
+
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ def init_log(
     """
     formatter = logging.Formatter(format, datefmt)
     logger = logging.getLogger()
+    logger.handlers = []
     logger.setLevel(file_level)
 
     # console Handler

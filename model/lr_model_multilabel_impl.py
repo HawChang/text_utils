@@ -29,6 +29,7 @@ from utils.data_io import write_to_file
 from utils.data_io import dump_pkl
 from utils.data_io import load_pkl
 from utils.for_def_user import LabelEncoder
+from utils.multi_label_metrics import multilabel_classification_report, multilabel_classification_diff
 
 class BaseLRModel(object):
     """LR分类模型基础类
@@ -153,18 +154,27 @@ class BaseLRModel(object):
         if not hasattr(self, "vectorizer"):
             self.vectorizer = load_pkl(self.vectorizer_path)
 
-        #pred_label_list = list()
-        #real_label_list = list()
+        pred_label_list = list()
+        real_label_list = list()
         pred_info_list = list()
-        #wrong_info_list = list()
+        total_pred_time = 0
         with codecs.open(val_data_path, "r", "gb18030") as rf:
             for line in rf:
                 line = line.strip("\n")
                 real_label, feature_str = self.feature_label_gen(line)
+                real_label = json.loads(real_label)
+                real_label_list.append(real_label)
                 feature_vec = self.vectorizer.transform([feature_str])
-                pred_list = list(self.lr_model_mult.check(feature_vec)[0])
-                pred_info_list.append("\t".join([json.dumps(pred_list), line]))
+                start_time = time.time()
+                pred_label = list(self.lr_model_mult.check(feature_vec)[0])
+                total_pred_time += time.time() - start_time
+                pred_label_list.append(pred_label)
+                pred_info_list.append("\t".join([json.dumps(pred_label), line]))
         write_to_file(pred_info_list, self.pred_res_path)
+        print("predict num = {}, speed = {:.4f}s/example"\
+                .format(len(pred_info_list), total_pred_time/float(len(pred_info_list))))
+
+        multilabel_classification_report(pred_label_list, real_label_list, self.label_encoder)
 
 
 if __name__ == "__main__":
