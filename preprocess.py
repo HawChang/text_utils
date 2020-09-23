@@ -133,7 +133,7 @@ class Preprocessor(object):
                     read_func=lambda x: x.strip("\n").split("\t"))
             feature_list = [(int(x[0]), x[1]) for x in feature_list]
             logging.info("cost_time : %.4f" % (time.time() - start_time))
-        
+
         if split_train_test:
             # 划分训练集、验证集
             train_data_list, val_data_list, train_feature_list, val_feature_list = \
@@ -147,7 +147,7 @@ class Preprocessor(object):
             write_to_file(train_data_list, process_file_path.train_data_path)
             write_to_file(train_feature_list, process_file_path.train_feature_path, \
                     write_func=lambda x : "%s\t%s" % (x[0], x[1]))
-            
+
             if split_train_test:
                 write_to_file(val_data_list, process_file_path.val_data_path)
                 write_to_file(val_feature_list, process_file_path.val_feature_path, \
@@ -171,7 +171,7 @@ class Preprocessor(object):
                     train_label,
                     vectorizer.get_feature_names(),
                     reserved_feature_file=feature_path)
-            
+
             # 生成各特征对应的id 从1开始 reserved_feature_name的顺序和feature_path中的顺序是一致的
             feature_id_dict = {v:(ind) for ind, v in enumerate(reserved_feature_name)}
 
@@ -185,7 +185,7 @@ class Preprocessor(object):
         logging.info("train feature vec shape: %s." % str(train_feature_vec.shape))
         if split_train_test:
             logging.info("test feature vec shape: %s." % str(val_feature_vec.shape))
-        
+
         if to_file:
             if libsvm_format:
                 logging.info("trans to libsvm data file.")
@@ -201,7 +201,7 @@ class Preprocessor(object):
                 if split_train_test:
                     dump_pkl((val_feature_vec, val_label), process_file_path.val_pkl_path, True)
                 logging.info("cost_time : %.4f" % (time.time() - start_time))
-        
+
         if not split_train_test:
             val_feature_vec = None
             val_label = None
@@ -247,7 +247,7 @@ if __name__ == "__main__":
             logging.debug("seg res : %s" % seg_text.encode("gb18030"))
         features = feature_list if duplicate else set(feature_list)
         return (label, " ".join(features))
-    
+
 
     test_processor = Preprocessor(
             feature_gen_func=feature_label_gen,

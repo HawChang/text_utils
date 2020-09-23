@@ -44,7 +44,7 @@ class BaseCluster(object):
         self.feature_id_path = os.path.join(model_dir, "feature_id.txt")
         self.cluster_model_path = os.path.join(model_dir, 'cluster_model.pkl')
         self.generator_path = os.path.join(model_dir, "generator.pkl")
-        
+
         self.cluster_res_path = os.path.join(output_dir, "cluster_res.txt")
 
         self.line_process_num = 0
