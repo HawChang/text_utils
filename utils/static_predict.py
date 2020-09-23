@@ -57,20 +57,15 @@ class StaticPredictor(object):
             #logging.info(output_names)
             self.output_tensor = self.predictor.get_output_tensor(output_names[0])
 
-    def predict(self, text_list, batch_size=32, max_seq_len=300):
-        """预测
+    def predict_proba(self, text_list, batch_size=32, max_seq_len=300):
+        """预测 返回概率
         """
-        batch_id = 1
         predict_time = 0
-        res_process_time = 0
         tokenize_time = 0
         res_list = list()
         for cur_batch_data_ids, cur_tokenize_time in \
                 self.batch(text_list, batch_size, max_seq_len, max_ensure=False):
             tokenize_time += cur_tokenize_time
-            #if batch_id % 100 == 0:
-            #    logging.info("batch #{}".format(batch_id))
-            #batch_id += 1
             start_time = time.time()
             if self.zero_copy:
                 self.input_tensor.copy_from_cpu(np.array(cur_batch_data_ids))
@@ -81,15 +76,20 @@ class StaticPredictor(object):
                 logits = self.predictor.run(data_tensor)[0].as_ndarray()
             predict_time += time.time() - start_time
 
-            start_time = time.time()
-            pred_label_id_list = np.argmax(logits, axis=-1).tolist()
-            rate_list = logits[range(len(pred_label_id_list)), pred_label_id_list]
-            label_list = [self.id_label_dict[x] for x in pred_label_id_list]
-            res_list.extend(zip(label_list, rate_list))
-            res_process_time += time.time() - start_time
-        logging.info("predict time: %.4fs, res_process_time: %.4fs, tokenize_time: %.4fs"\
-                % (predict_time, res_process_time, tokenize_time))
-        return res_list
+            res_list.append(logits)
+        logging.info("predict time: %.4fs, tokenize_time: %.4fs"\
+                % (predict_time, tokenize_time))
+        return np.concatenate(res_list, axis=0)
+
+    def predict(self, text_list, batch_size=32, max_seq_len=300):
+        """预测
+        """
+        res_list = self.predict_proba(text_list, batch_size, max_seq_len)
+        pred_label_id_list = np.argmax(res_list, axis=-1).tolist()
+        rate_list = res_list[range(len(pred_label_id_list)), pred_label_id_list]
+        label_list = [self.id_label_dict[x] for x in pred_label_id_list]
+
+        return zip(label_list, rate_list)
 
     def _gen_batch_data(self, data_iter, batch_size=32):
         """数据分批
