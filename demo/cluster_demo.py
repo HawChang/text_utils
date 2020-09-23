@@ -31,7 +31,7 @@ class ClusterDemo(BaseCluster):
     def __init__(self, mid_data_dir, model_dir, output_dir):
         super(ClusterDemo, self).__init__(model_dir, output_dir)
         self.mid_data_paths = ProcessFilePath(output_dir=mid_data_dir)
-        
+
         self.feature_generator = FeatureGenerator(
                 seg_method=config.seg_method,
                 segdict_path=config.segdict_path,
