@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # -*- coding:gb18030 -*-
 """
-File  :   nets.py
+File  :   textcnn.py
 Author:   zhanghao55@baidu.com
 Date  :   20/08/11 11:43:17
 Desc  :   
 """
 
+import logging
 import paddle as P
 import paddle.fluid as F
 import paddle.fluid.layers as L
@@ -14,6 +15,8 @@ import paddle.fluid.dygraph as D
 
 
 class ConvPool(D.Layer):
+    """卷积池化层
+    """
     def __init__(self,
             num_channels,
             num_filters,
@@ -22,11 +25,6 @@ class ConvPool(D.Layer):
             use_cudnn=False,
             ):
         super(ConvPool, self).__init__()
-
-        #print("num channels = {}".format(self.num_channels))
-        #print("num filters = {}".format(self.num_filters))
-        #print("filter size = {}".format(self.filter_size))
-        #print("use cudnn = {}".format(self.use_cudnn))
 
         self._conv2d = D.Conv2D(
             num_channels=num_channels,
@@ -39,6 +37,8 @@ class ConvPool(D.Layer):
         self.mse = D.MSELoss()
 
     def forward(self, inputs):
+        """前向预测
+        """
         # inputs shape = [batch_size, num_channels, seq_len, emb_dim] [N, C, H, W]
         #print("inputs shape: {}".format(inputs.shape))
 
@@ -56,6 +56,8 @@ class ConvPool(D.Layer):
 
 
 class TextCNN(D.Layer):
+    """textcnn分类模型
+    """
     def __init__(self,
             num_class,
             vocab_size,
@@ -66,18 +68,28 @@ class TextCNN(D.Layer):
             win_size_list=None,
             is_sparse=True,
             use_cudnn=True,
-            is_inference=False,
             ):
         super(TextCNN, self).__init__()
-        self.is_inference = is_inference
 
         self.embedding = D.Embedding(
             size=[vocab_size, emb_dim],
             dtype='float32',
             is_sparse=is_sparse)
 
+        logging.info("num_class    = {}".format(num_class))
+        logging.info("vocab size   = {}".format(vocab_size))
+        logging.info("emb_dim      = {}".format(emb_dim))
+        logging.info("num filters  = {}".format(num_filters))
+        logging.info("fc_hid_dim   = {}".format(fc_hid_dim))
+        logging.info("num channels = {}".format(num_channels))
+        logging.info("windows size = {}".format(win_size_list))
+        logging.info("is sparse    = {}".format(is_sparse))
+        logging.info("use cudnn    = {}".format(use_cudnn))
+
         win_size_list = [3] if win_size_list is None else win_size_list
         def gen_conv_pool(win_size):
+            """生成指定窗口的卷积池化层
+            """
             return ConvPool(
                     num_channels,
                     num_filters,
@@ -88,10 +100,12 @@ class TextCNN(D.Layer):
 
         self.conv_pool_list = D.LayerList([gen_conv_pool(win_size) for win_size in win_size_list])
 
-        self._hid_fc = D.Linear(input_dim=num_filters*len(win_size_list), output_dim=fc_hid_dim, act="tanh")
+        self._hid_fc = D.Linear(input_dim=num_filters * len(win_size_list), output_dim=fc_hid_dim, act="tanh")
         self._output_fc = D.Linear(input_dim=fc_hid_dim, output_dim=num_class, act=None)
 
-    def forward(self, inputs, labels=None):
+    def forward(self, inputs, labels=None, logits_softmax=False):
+        """前向预测
+        """
         #print("\n".join(map(lambda ids: "/ ".join([id_2_token[x] for x in ids]), inputs.numpy())))
         # inputs shape = [batch_size, seq_len]
         #print("inputs shape: {}".format(inputs.shape))
@@ -114,31 +128,22 @@ class TextCNN(D.Layer):
         logits = self._output_fc(hid_fc)
         #print("logits shape: {}".format(logits.shape))
 
-        # 转静态图的时候 置is_inference为True
-        if self.is_inference:
+        # 输出logits为softmax后的结果
+        if logits_softmax:
+            logits = L.softmax(logits)
+
+        # 如果没有给标签 则输出logits结果
+        if labels is None:
             return logits
 
-        if labels is not None:
-            if len(labels.shape) == 1:
-                labels = L.reshape(labels, [-1, 1])
-            #print("labels shape: {}".format(labels.shape))
+        # 调整label的形状
+        if len(labels.shape) == 1:
+            labels = L.reshape(labels, [-1, 1])
+        #print("labels shape: {}".format(labels.shape))
 
-            loss = L.softmax_with_cross_entropy(logits, labels)
-            # 如果输出logits的激活函数为softmax 则不能用softmax_with_cross_entropy
-            #loss = L.cross_entropy(logits, labels)
-            loss = L.reduce_mean(loss)
-            #acc = L.accuracy(input=prediction, label=label)
-        else:
-            loss = None
+        loss = L.softmax_with_cross_entropy(logits, labels)
+        # 如果输出logits的激活函数为softmax 则不能用softmax_with_cross_entropy
+        #loss = L.cross_entropy(logits, labels)
+        loss = L.reduce_mean(loss)
+        #acc = L.accuracy(input=prediction, label=label)
         return loss, logits
-
-
-if __name__ == "__main__":
-    #text_cnn = TextCNN(
-    #        num_class=label_encoder.size(),
-    #        vocab_size=len(vocab_id),
-    #        )
-    #optimizer = F.optimizer.Adam(learning_rate=1e-4, parameter_list=text_cnn.parameters())
-    pass
-
-

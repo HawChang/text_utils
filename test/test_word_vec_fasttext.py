@@ -17,8 +17,8 @@ import unittest
 
 from utils.data_io import get_data
 from feature.feature_generator import FeatureGenerator
-from word_vec.fasttext import fasttext_training
-from word_vec.fasttext import load_fasttext_model
+from model.word_vec.fasttext import fasttext_training
+from model.word_vec.fasttext import load_fasttext_model
 from utils.logger import init_log
 
 init_log()
