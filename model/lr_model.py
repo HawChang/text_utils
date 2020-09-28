@@ -24,7 +24,12 @@ _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 
 from utils.data_io import read_from_file
+from utils.data_io import dump_libsvm_file
 from utils.softmax import softmax
+
+from sklearn.feature_extraction.text import CountVectorizer
+
+from tempfile import NamedTemporaryFile
 
 
 def argsort(number_list):
@@ -41,70 +46,63 @@ class LRModel(object):
         """
         self.model_loaded = False
 
-    def liblinear_train(self,
-            train_data_path,
-            model_path,
-            #liblinear_train_path="/home/work/zhanghao55/tools/liblinear-2.20/train",
+        #  LR模型所需
+        self.label_list = None
+        self.feature_name_list = None
+        self.feature_weight_dict = None
+        self.softmax_feature_weight_dict = None
+
+    def train(self,
+            train_feature,
+            train_label,
+            tmp_dir = "/tmp",
+            token_pattern=r'(?u)[^ ]+',
+            min_df = 2,
             liblinear_train_path="/home/users/zhanghao55/workspace/tools/liblinear-2.20/train",
-            model_conf="-s 0"):
-        """使用liblinear训练模型
-        [in] train_data_path: str, 训练数据地址 liblinear训练数据格式
-             model_path: str, 训练模型存储地址
-             liblinear_train_path: str, liblinear训练工具地址
-             model_conf: str, 训练时参数
-             例如:
-             L2-regularized logistic regression (primal): -s 0 （默认训练参数）
-             L1-regularized logistic regression: -s 6
-             设定-s的同时可以加上类别权重调整class weight set: -w4 0.1
+            model_conf="-s 0",
+            ):
+        """训练LR模型
+        [in]  train_feature: list[list[str]], 训练数据特征的列表
+              train_label: list[int], 训练标签
+              tmp_dir: str, 训练时临时文件存放的目录
+              token_pattern: str, vectorizer用于划分token的模板
+              min_df: int, 特征频率最小阈值
+              liblinear_train_path: str, liblinear训练工具地址
+              model_conf: str, 训练时参数
+              例如:
+              L2-regularized logistic regression (primal): -s 0 （默认训练参数）
+              L1-regularized logistic regression: -s 6
+              设定-s的同时可以加上类别权重调整class weight set: -w4 0.1
         """
-        # liblinear工具地址
-        assert os.path.isfile(liblinear_train_path), "%s is not a file." % liblinear_train_path
-        try:
-            logging.info("liblinear train start...")
-            start_time = time.time()
-            cmd_str =' '.join([
-                    liblinear_train_path,
-                    model_conf,
-                    train_data_path,
-                    model_path])
-            logging.debug("cmd str: %s" % cmd_str)
-            popen = subprocess.Popen(
-                    cmd_str,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    bufsize=1)
+        train_feature_str = [" ".join(features) for features in train_feature]
+        # 根据train_feature生成liblinear格式的文件
+        vectorizer = CountVectorizer(token_pattern=token_pattern, lowercase=False, min_df=min_df)
+        # 生成训练特征
+        feature_vec = vectorizer.fit_transform(train_feature_str)
+        with NamedTemporaryFile(dir=tmp_dir) as libsvm_format_file:
+            logging.info("libsvm format file: {}".format(libsvm_format_file.name))
+            # 生成liblinear训练数据
+            dump_libsvm_file(feature_vec, train_label, libsvm_format_file.name, False)
+            with NamedTemporaryFile(dir=tmp_dir) as liblinear_model_file:
+                logging.info("liblinear model file: {}".format(liblinear_model_file.name))
+                # liblinear训练
+                self.liblinear_train(
+                        train_data_path=libsvm_format_file.name,
+                        model_path=liblinear_model_file.name,
+                        liblinear_train_path=liblinear_train_path,
+                        model_conf=model_conf,
+                        )
+                # 生成预测所需权重dict
+                self.gen_feature_weight_dict(liblinear_model_file.name, vectorizer.get_feature_names())
 
-            # 重定向标准输出
-            while popen.poll() is None:
-                # None表示正在执行中
-                r = popen.stdout.readline().strip("\n")
-                logging.debug(r)
-
-            # 重定向错误输出
-            if popen.poll() != 0:
-                # 不为0表示执行错误
-                err = popen.stderr.read().strip("\n")
-                logging.error(err)
-
-            logging.info("cost time %.4fs." % (time.time() - start_time))
-        except subprocess.CalledProcessError as e:
-            logging.warning("liblinear train failed.")
-            logging.error(e)
-            raise e
-
-        logging.info("liblinear train finish")
-
-    def load_model(self, model_path, feature_id_path):
-        """根据liblinear生成的模型文件和特征保留文件加载feature_weight_dict
-        [in]  model_path: str, liblinear模型文件地址
-              feature_id: str, 特征字面文件地址, 其顺序应与liblinear模型文件中特征的顺序一致
+    def gen_feature_weight_dict(self, liblinear_model_path, feature_name_list):
+        """根据liblinear生成的模型文件和特征保留文件生成线上需要的multiclass特征权重文件
+        [in]  liblinear_model_path: str, liblinear模型文件地址
+              feature_name_list: list(str), 特征字面列表, 其顺序应与liblinear模型文件中特征的顺序一致
         """
 
-        self.feature_name_list = list(read_from_file(feature_id_path, \
-                read_func=lambda x: x.strip("\n").split("\t")[1]))
-        
         self.label_list = list()
+        self.feature_name_list = feature_name_list
         self.feature_weight_dict = dict()
         self.softmax_feature_weight_dict = dict()
 
@@ -112,9 +110,9 @@ class LRModel(object):
         # 按类别值从小到大的顺序给出
         class_num = None
         feature_index = 0
-        logging.debug("load model from file: %s." % model_path)
+        logging.info("gen feature weight file from liblinear model: %s." % liblinear_model_path)
         start_time = time.time()
-        with codecs.open(model_path, "r", "gb18030") as rf:
+        with codecs.open(liblinear_model_path, "r", "gb18030") as rf:
             for index, line in enumerate(rf):
                 line = line.strip("\n")
                 if index == 1:
@@ -156,34 +154,130 @@ class LRModel(object):
         logging.info("cost time %.4fs." % (time.time() - start_time))
         self.model_loaded = True
 
-    def save_in_feature_weight_format(
-            self,
-            feature_weight_save_path,
-            model_path=None,
-            feature_id_path=None):
-        """根据liblinear生成的模型文件和特征保留文件生成线上需要的multiclass特征权重文件
-        [in]  feature_weight_save_path: str, 特征权重输出文件地址
-              model_path: str, liblinear模型文件地址
-              feature_id: str, 特征字面文件地址, 其顺序应与liblinear模型文件中特征的顺序一致
+    def save(self, model_path):
+        """存储模型文件
+        [in]  model_path: str, 模型存储文件
         """
-
         if not self.model_loaded:
-            logging.debug("model not loaded")
-            # load model时 会生成self.feature_name_list和self.feature_weight_dict
-            if model_path is None or feature_id_path is None:
-                raise ValueError("model_path and feature_id_path are required when loading model")
-            self.load_model(model_path, feature_id_path)
+            logging.error("model not loaded")
 
-        logging.debug("gen_feature_weight_file start...")
+        logging.info("save model to: {}".format(model_path))
         start_time = time.time()
-        with codecs.open(feature_weight_save_path, "w", "gb18030") as wf:
+        with codecs.open(model_path, "w", "gb18030") as wf:
             wf.write("classes: %s" % ",".join(self.label_list))
             for index, feature_name in enumerate(self.feature_name_list):
                 weight_str = " ".join(["%.20f" % x for x in self.feature_weight_dict[feature_name]])
                 wf.write("\n" + "\t".join([str(index), feature_name, weight_str]))
-        logging.debug("cost time %.4fs." % (time.time() - start_time))
+        logging.info("cost time %.4fs." % (time.time() - start_time))
 
-    def check(self, features, min_conf=0.05, digits=4, evidence=False, topk=10):
+    def load(self, model_path):
+        """加载模型文件
+        [in]  model_path: str, 模型文件加载地址
+        """
+        logging.info("load model from: {}".format(model_path))
+        start_time = time.time()
+
+        self.label_list = None
+        self.feature_name_list = list()
+        self.feature_weight_dict = dict()
+        self.softmax_feature_weight_dict = dict()
+
+        with codecs.open(model_path, "r", "gb18030") as rf:
+            for index, line in enumerate(rf):
+                line = line.strip("\n")
+                if index == 0:
+                    self.label_list = line.split(" ")[-1].split(",")
+                    class_num  = len(self.label_list)
+                    assert class_num > 1, "class num should greater than 1, actual {}".format(class_num)
+                    continue
+
+                feature_id, feature_name, weights_str = line.strip("\n").split("\t")
+                self.feature_name_list.append(feature_name)
+
+                weights = [float(x) for x in weights_str.split(" ")]
+                assert len(weights) == class_num, "wrong weight num at line #%d, expect %d, actual %d." \
+                        % (index+1, class_num, len(weights))
+
+                self.feature_weight_dict[feature_name] = weights
+                self.softmax_feature_weight_dict[feature_name] = softmax(weights, axis=1)
+
+        logging.info("cost time %.4fs." % (time.time() - start_time))
+
+    def liblinear_train(self,
+            train_data_path,
+            model_path,
+            liblinear_train_path="/home/users/zhanghao55/workspace/tools/liblinear-2.20/train",
+            model_conf="-s 0"):
+        """使用liblinear训练模型
+        [in] train_data_path: str, 训练数据地址 liblinear训练数据格式
+             model_path: str, 训练模型存储地址
+             liblinear_train_path: str, liblinear训练工具地址
+             model_conf: str, 训练时参数
+             例如:
+             L2-regularized logistic regression (primal): -s 0 （默认训练参数）
+             L1-regularized logistic regression: -s 6
+             设定-s的同时可以加上类别权重调整class weight set: -w4 0.1
+        """
+        # liblinear工具地址
+        assert os.path.isfile(liblinear_train_path), "%s is not a file." % liblinear_train_path
+        try:
+            logging.info("liblinear train start...")
+            start_time = time.time()
+            cmd_str =' '.join([
+                    liblinear_train_path,
+                    model_conf,
+                    train_data_path,
+                    model_path])
+            logging.debug("cmd str: %s" % cmd_str)
+
+            with subprocess.Popen(
+                    cmd_str,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    bufsize=1) as popen:
+
+                # 重定向标准输出
+                while popen.poll() is None:
+                    # None表示正在执行中
+                    r = popen.stdout.readline().decode().strip("\n")
+                    if len(r) > 0:
+                        logging.debug(r)
+
+                # 重定向错误输出
+                if popen.poll() != 0:
+                    # 不为0表示执行错误
+                    err = popen.stderr.readline().decode().strip("\n")
+                    if len(err) > 0:
+                        logging.error(err)
+
+            logging.info("cost time %.4fs." % (time.time() - start_time))
+
+        except subprocess.CalledProcessError as e:
+            logging.warning("liblinear train failed.")
+            logging.error(e)
+            raise e
+
+        logging.info("liblinear train finish")
+
+    def predict(self, features_list, **kwargs):
+        """预测多个文本
+        [in]  features_list : list[list[str]], 多个文本的特征列表
+              min_conf : float, 作为标签的最小置信度
+              digits: int, 精度控制在几位小数
+              evidence: bool, true则多返回一个正向特征信息 固定返回
+              topk: int, 取绝对值前topk个特征作为证据
+        [out] pred_list: list[list[(str, str, str)]], 多个预测结果
+                         每个结果为二元组列表, (类别, 置信度, 证据) 由大到小
+        **已验证 与liblinear模型输出概率一致 此时bias为-1（及默认值）
+        """
+        pred_res = list()
+        for features in features_list:
+            cur_res = self._single_predict(features, **kwargs)
+            pred_res.append(cur_res)
+        return pred_res
+
+    def _single_predict(self, features, min_conf=0.05, digits=4, evidence=False, topk=10):
         """根据特征列表预测结果
         [in]  features : list[str], 特征列表
               min_conf : float, 作为标签的最小置信度
@@ -226,7 +320,7 @@ class LRModel(object):
                 continue
             # 准备证据
             cur_label_evidence = "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
-                    sorted(evidence_dict[label], key=lambda x:abs(x[2]), reverse=True)[:topk]])
+                    sorted(evidence_dict[label], key=lambda x:abs(x[1]), reverse=True)[:topk]])
             pred_list.append((label, digits_format % pred_proba, cur_label_evidence))
         
         #label_evidence = None
@@ -235,6 +329,7 @@ class LRModel(object):
         #            "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
         #            sorted(evidence_dict[pred_list[0][0]], key=lambda x:x[1], reverse=True)[:topk]])
         return pred_list
+
 
 if __name__ == "__main__":
     pass

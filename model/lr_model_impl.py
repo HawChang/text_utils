@@ -169,7 +169,7 @@ class BaseLRModel(object):
         total_num = len(real_label_list)
         acc = correct_num / float(total_num)
         print("acc = %.4f(%d/%d)" % (acc, correct_num, total_num))
-        
+
 
 
 

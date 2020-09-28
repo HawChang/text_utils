@@ -54,7 +54,6 @@ class FeatureGenerator(object):
         self._stopwords = set() if stopword_path is None \
                 else set(read_from_file(stopword_path, encoding=encoding))
 
-
     def seg_words(self, text, verbose=False):
         """ÇÐ´Ê
         [in] text: str, ´ýÇÐ´Ê×Ö·û´®, unicode»ògb18030±àÂë
