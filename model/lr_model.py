@@ -23,7 +23,6 @@ from collections import defaultdict
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 
-from utils.data_io import read_from_file
 from utils.data_io import dump_libsvm_file
 from utils.softmax import softmax
 
@@ -130,8 +129,8 @@ class LRModel(object):
 
                 # liblinear权值文件 最后会有一个空格
                 weights = line.strip(" ").split(" ")
-                assert len(weights) == class_num or class_num == 2, "wrong weight num at line #%d, expect %d, actual %d." \
-                        % (index+1, class_num, len(weights))
+                assert len(weights) == class_num or class_num == 2, \
+                    "wrong weight num at line #%d, expect %d, actual %d." % (index+1, class_num, len(weights))
                 reordered_weights = list()
                 if class_num > 2:
                     for weight_index in range(class_num):
@@ -146,7 +145,8 @@ class LRModel(object):
                     reordered_weights[index_transfer[1]] = -float(weights[0])
 
                 self.feature_weight_dict[self.feature_name_list[feature_index]] = reordered_weights
-                self.softmax_feature_weight_dict[self.feature_name_list[feature_index]] = softmax(reordered_weights, axis=1)
+                self.softmax_feature_weight_dict[self.feature_name_list[feature_index]] = \
+                    softmax(reordered_weights, axis=1)
                 feature_index += 1
         logging.info("cost time %.4fs." % (time.time() - start_time))
         self.model_loaded = True
@@ -193,18 +193,15 @@ class LRModel(object):
 
                 weights = [float(x) for x in weights_str.split(" ")]
                 assert len(weights) == class_num, "wrong weight num at line #%d, expect %d, actual %d." \
-                        % (index+1, class_num, len(weights))
+                                                  % (index+1, class_num, len(weights))
 
                 self.feature_weight_dict[feature_name] = weights
                 self.softmax_feature_weight_dict[feature_name] = softmax(weights, axis=1)
 
         logging.info("cost time %.4fs." % (time.time() - start_time))
 
-    def liblinear_train(self,
-            train_data_path,
-            model_path,
-            liblinear_train_path="/home/users/zhanghao55/workspace/tools/liblinear-2.20/train",
-            model_conf="-s 0"):
+    def liblinear_train(self, train_data_path, model_path,
+                        liblinear_train_path="./liblinear/train", model_conf="-s 0"):
         """使用liblinear训练模型
         [in] train_data_path: str, 训练数据地址 liblinear训练数据格式
              model_path: str, 训练模型存储地址
@@ -220,7 +217,7 @@ class LRModel(object):
         try:
             logging.info("liblinear train start...")
             start_time = time.time()
-            cmd_str =' '.join([
+            cmd_str = ' '.join([
                     liblinear_train_path,
                     model_conf,
                     train_data_path,
@@ -274,8 +271,8 @@ class LRModel(object):
             pred_res.append(cur_res)
         return pred_res
 
-    def eval(self, eval_feature, eval_label, eval_text_info=None, default_label=0, label_trans_func=None,
-             eval_res_path=None, eval_diff_path=None):
+    def eval(self, eval_feature, eval_label, eval_text_info=None, default_label=0,
+             label_trans_func=None, eval_res_path=None, eval_diff_path=None):
         """根据eval数据集评估模型效果
         [in]  eval_data: list[list[str]], 特征列表的列表
               eval_label: list[Any], 标签列表
@@ -301,7 +298,8 @@ class LRModel(object):
                 eval_text_info = ["\x01".join(x) for x in eval_feature]
 
             pred_label = list()
-            for cur_pred_res, cur_eval_label, cur_text in zip(pred_res, eval_label, eval_text_info):
+            for cur_pred_res, cur_eval_label, cur_text in \
+                    zip(pred_res, eval_label, eval_text_info):
                 cur_label = default_label
                 cur_rate = "0"
                 cur_evidence = "NULL"
@@ -356,13 +354,15 @@ class LRModel(object):
                     print("index error. index = %d." % index)
                     raise e
     
-        #logging.debug("label_weght_sum: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
+        #logging.debug("label_weght_sum: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value)
+        #                                                for label,value in label_value.items() ]))
     
         for label, sum_weight in label_value.items():
             label_value[label] = 1.0 / (1.0 + math.exp(-sum_weight))
             total += label_value[label]
     
-        #logging.debug("label_value: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value) for label,value in label_value.items() ]))
+        #logging.debug("label_value: %s" % ','.join(["[%s,%.2f]" % (label.encode("gb18030"), value)
+        #                                            for label,value in label_value.items() ]))
         digits_format = "%%.%df" % digits
         pred_list = list()
         for label, weight_pred in sorted(label_value.items(), key=lambda x: x[1], reverse=True):
@@ -373,12 +373,6 @@ class LRModel(object):
             cur_label_evidence = "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
                     sorted(evidence_dict[label], key=lambda x:abs(x[1]), reverse=True)[:topk]])
             pred_list.append((label, digits_format % pred_proba, cur_label_evidence))
-        
-        #label_evidence = None
-        #if evidence:
-        #    label_evidence = u"无预测结果" if len(pred_list) == 0 else \
-        #            "||".join(["%s(%.6f)" % (x[0], x[2]) for x in \
-        #            sorted(evidence_dict[pred_list[0][0]], key=lambda x:x[1], reverse=True)[:topk]])
         return pred_list
 
 
