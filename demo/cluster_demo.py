@@ -15,12 +15,12 @@ Date: 2019/12/10 15:26:16
 import os
 import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append("%s/../../" % _cur_dir)
+sys.path.append("%s/../" % _cur_dir)
 
-from text_utils.model.cluster_model_impl import BaseCluster
-from text_utils.utils.logger import Logger
-from text_utils.feature.feature_generator import FeatureGenerator
-from text_utils.preprocess import ProcessFilePath
+from model.cluster_model_impl import BaseCluster
+from utils.logger import Logger
+from feature.feature_generator import FeatureGenerator
+from preprocess import ProcessFilePath
 
 import config
 
