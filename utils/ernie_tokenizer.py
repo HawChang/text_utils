@@ -59,39 +59,6 @@ def _wordpiece(token, vocab_tree, unk_token, prefix='##', sentencepiece_prefix='
     else:
         return sub_tokens, sub_pos
 
-def _wordpiece_old(token, vocab, unk_token, prefix='##', sentencepiece_prefix=''):
-    """ wordpiece: helloworld => [hello, ##world] """
-    chars = list(token)
-    if len(chars) > _max_input_chars_per_word:
-        return [unk_token], [(0, len(chars))]
-
-    is_bad = False
-    start = 0
-    sub_tokens = []
-    sub_pos = []
-    while start < len(chars):
-        end = len(chars)
-        cur_substr = None
-        while start < end:
-            substr = "".join(chars[start:end])
-            if start == 0:
-                substr = sentencepiece_prefix + substr
-            if start > 0:
-                substr = prefix + substr
-            if substr in vocab:
-                cur_substr = substr
-                break
-            end -= 1
-        if cur_substr is None:
-            is_bad = True
-            break
-        sub_tokens.append(cur_substr)
-        sub_pos.append((start, end))
-        start = end
-    if is_bad:
-        return [unk_token], [(0, len(chars))]
-    else:
-        return sub_tokens, sub_pos
 
 class ErnieTokenizer(object):
     """用于tokenize得到ernie模型接受的输入的工具类
