@@ -11,6 +11,9 @@ File: config.py
 Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/11/21 20:53:39
 """
+import os
+work_dir = os.getcwd()
+print(work_dir)
 
 # 训练参数
 re_seg = True
@@ -24,9 +27,15 @@ test_ratio = 0.2
 # 特征生成参数
 duplicate = False
 idea_word_feature_sep = False
-seg_method = "word_seg"
-stopword_path = "./src/text_utils/dict/stopword.txt"
-segdict_path = "./src/text_utils/dict/chinese_gbk"
+seg_method = "jieba"
+# 判断当前执行是否在text_utils下
+if "text_utils" in work_dir:
+    stopword_path = "./dict/stopword.txt"
+    segdict_path = "./dict/chinese_gbk"
+else:
+    stopword_path = "./src/text_utils/dict/stopword.txt"
+    segdict_path = "./src/text_utils/dict/chinese_gbk"
+    
 ngram = 3
 feature_min_length = 2
 
