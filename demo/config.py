@@ -51,6 +51,7 @@ rex = u"{关键词}|{投放地域}|{地域}|{|}"
 
 to_file = True
 # 模型训练时各数据地址
+liblinear_train_path = "/home/work/zhanghao55/tools/liblinear-2.20/train"
 train_data_dir = "./data/train_data/"
 mid_data_dir = "./local_data/"
 model_dir = "./model/"

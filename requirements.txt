@@ -1,0 +1,12 @@
+gensim
+jieba
+numpy
+paddle-ernie
+pandas
+# paddlepaddle-gpu依赖opencv, 但当前opencv版本4.4.0.44在安装时会出错(错误信息：Could not build wheels for opencv-python which use PEP 517 and cannot be installed directly)
+# 因此要限定在该版本以下
+opencv-python<=4.2.0.32
+paddlepaddle-gpu
+scikit-learn
+tornado
+cleanlab

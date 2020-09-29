@@ -12,6 +12,7 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/11/15 16:55:49
 """
 
+import logging
 import os
 import sys
 import time
@@ -25,10 +26,7 @@ from sklearn.model_selection import GridSearchCV
 
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
-from utils.logger import Logger
 from utils.parameter_optimizer import grid_search_cv
-
-log = Logger().get_logger()
 
 
 def cluster_score(X, y_pred):
@@ -38,11 +36,13 @@ def cluster_score(X, y_pred):
     [out] score: double, 聚类效果得分
     """
     try:
-        score = calinski_harabaz_score(X.toarray(), y_pred)
-        log.info("Calinski-Harabasz Score : %.4f" % score)
+        if not isinstance(X, np.ndarray):
+            X = X.toarray()
+        score = calinski_harabaz_score(X, y_pred)
+        logging.info("Calinski-Harabasz Score : %.4f" % score)
     except ValueError as e:
         score = -1.0
-        log.info("Calinski-Harabasz Score Fail : %.4f" % score)
+        logging.info("Calinski-Harabasz Score Fail : %.4f" % score)
     return score
 
 
@@ -83,10 +83,10 @@ def data_cluster(cluster_model, train_data):
           train_data: array-like shape(n_samples, n_features), 待聚类数据
     [out] cluster_model: object, 聚类模型
     """
-    log.info("start MiniBatchKMeans")
+    logging.info("start MiniBatchKMeans")
     start_time = time.time()
     # 评估聚类效果依赖train_data和模型聚类结果
     cluster_model.fit(train_data)
-    log.info("cost time : %.4fs" % (time.time() - start_time))
-    log.info("score : %.4f" % cluster_score(train_data, cluster_model.labels_))
+    logging.info("cost time : %.4fs" % (time.time() - start_time))
+    logging.info("score : %.4f" % cluster_score(train_data, cluster_model.labels_))
     return cluster_model

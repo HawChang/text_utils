@@ -12,6 +12,7 @@ Author: zhanghao55(zhanghao55@baidu.com)
 Date: 2019/11/18 17:35:01
 """
 
+import logging
 import os
 import sys
 import time
@@ -20,9 +21,6 @@ from sklearn.model_selection import GridSearchCV
 
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
-from utils.logger import Logger
-
-log = Logger().get_logger()
 
 def grid_search_cv(estimator, params, train_data, test_data, scoring=None,
         cv=5, n_jobs=-1, refit=True):
@@ -43,13 +41,13 @@ def grid_search_cv(estimator, params, train_data, test_data, scoring=None,
 
     gsc = GridSearchCV(estimator, params, cv=cv, n_jobs=n_jobs, refit=refit, scoring=scoring)
 
-    log.info("start GridSearchCV")
+    logging.info("start GridSearchCV")
     start_time = time.time()
     # 评估聚类效果依赖train_data和模型聚类结果
     gsc.fit(train_data, train_data)
-    log.debug("cost time : %.4fs" % (time.time() - start_time))
+    logging.debug("cost time : %.4fs" % (time.time() - start_time))
     grid_search_cv_res(gsc)
-    log.info("best params : %s" % str(gsc.best_params_))
+    logging.info("best params : %s" % str(gsc.best_params_))
     return gsc
 
 def grid_search_cv_res(gsc):
@@ -59,6 +57,6 @@ def grid_search_cv_res(gsc):
     means = gsc.cv_results_['mean_test_score']
     stds = gsc.cv_results_['std_test_score']
     params_list = gsc.cv_results_['params']
-    log.info("GridSearchCV score info:")
+    logging.info("GridSearchCV score info:")
     for mean, std, params in zip(means, stds, params_list):
-        log.debug("\t%0.3f (+/-%0.03f) for %r" % (mean, std * 2, params))
+        logging.debug("\t%0.3f (+/-%0.03f) for %r" % (mean, std * 2, params))

@@ -13,20 +13,20 @@ Date: 2019/09/19 22:04:21
 """
 
 import sys
+import logging
 import time
 import warnings
 
 from sklearn.model_selection import train_test_split
 
-from utils.logger import Logger
 from utils.data_io import get_data
 from utils.data_io import write_to_file
 from utils.data_io import read_from_file
 from utils.data_io import dump_libsvm_file
+from utils.data_io import dump_pkl
 from feature.feature_selector import FeatureSelector
 from feature.feature_vectorizer import init_vectorizer
 
-log = Logger().get_logger()
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
 class ProcessFilePath(object):
@@ -39,14 +39,17 @@ class ProcessFilePath(object):
         # 中间数据地址
         self.total_data_path = self.output_dir + "/total_data.txt"
         self.train_data_path = self.output_dir + "/train_data.txt"
-        self.val_data_path = self.output_dir + "/test_data.txt"
+        self.val_data_path = self.output_dir + "/val_data.txt"
 
         self.total_feature_path = self.output_dir + "/total_feature.txt"
         self.train_feature_path = self.output_dir + "/train_feature.txt"
-        self.val_feature_path = self.output_dir + "/test_feature.txt"
+        self.val_feature_path = self.output_dir + "/val_feature.txt"
 
         self.train_lib_format_path = self.output_dir + "/train_lib_format.txt"
-        self.val_lib_format_path = self.output_dir + "/test_lib_format.txt"
+        self.val_lib_format_path = self.output_dir + "/val_lib_format.txt"
+
+        self.train_pkl_path = self.output_dir + "/train_data.pkl"
+        self.val_pkl_path = self.output_dir + "/val_data.pkl"
 
 
 class Preprocessor(object):
@@ -78,7 +81,7 @@ class Preprocessor(object):
         self.test_ratio = test_ratio
         self.min_df = min_df
 
-        log.info("Preprocessor init succeed")
+        logging.info("Preprocessor init succeed")
 
     def gen_data_vec(self,
             data_path,
@@ -86,6 +89,7 @@ class Preprocessor(object):
             split_train_test=False,
             feature_select=False,
             to_file=True,
+            libsvm_format=True,
             re_seg=True,
             process_file_path=None):
         """根据给定数据集地址 生成特征
@@ -94,6 +98,7 @@ class Preprocessor(object):
               split_train_test: bool, true则划分测试集训练集
               feature_select: bool, true则进行特征选择
               to_file: bool, true则中间数据会被存储
+              libsvm_format: bool, true则训练数据被转为libsvm格式
               re_seg: bool, 是否重新从原始数据生成全部数据的特征信息
               process_file_path: ProcessFilePath, 预处理时各文件地址
         [out] train_feature_vec: matrix, 训练数据特征矩阵
@@ -107,7 +112,7 @@ class Preprocessor(object):
 
         # 首先根据数据集 生成数据的特征
         if re_seg:
-            log.info("gen data feature.")
+            logging.info("gen data feature.")
             start_time = time.time()
             data_list = get_data(data_path)
             # 调用函数 生成特征
@@ -117,18 +122,18 @@ class Preprocessor(object):
                 write_to_file(data_list, process_file_path.total_data_path)
                 # 存储特征信息
                 write_to_file(feature_list, process_file_path.total_feature_path, \
-                        write_func=lambda x : "%d\t%s" % x)
-            log.info("cost_time : %.4f" % (time.time() - start_time))
+                        write_func=lambda x : "{}\t{}".format(x[0], x[1]))
+            logging.info("cost_time : %.4f" % (time.time() - start_time))
         else:
-            log.info("load data feature.")
+            logging.info("load data feature.")
             start_time = time.time()
             # 加载已有的数据和特征列表
             data_list = read_from_file(process_file_path.total_data_path)
             feature_list = read_from_file(process_file_path.total_feature_path, \
                     read_func=lambda x: x.strip("\n").split("\t"))
             feature_list = [(int(x[0]), x[1]) for x in feature_list]
-            log.info("cost_time : %.4f" % (time.time() - start_time))
-        
+            logging.info("cost_time : %.4f" % (time.time() - start_time))
+
         if split_train_test:
             # 划分训练集、验证集
             train_data_list, val_data_list, train_feature_list, val_feature_list = \
@@ -142,7 +147,7 @@ class Preprocessor(object):
             write_to_file(train_data_list, process_file_path.train_data_path)
             write_to_file(train_feature_list, process_file_path.train_feature_path, \
                     write_func=lambda x : "%s\t%s" % (x[0], x[1]))
-            
+
             if split_train_test:
                 write_to_file(val_data_list, process_file_path.val_data_path)
                 write_to_file(val_feature_list, process_file_path.val_feature_path, \
@@ -166,7 +171,7 @@ class Preprocessor(object):
                     train_label,
                     vectorizer.get_feature_names(),
                     reserved_feature_file=feature_path)
-            
+
             # 生成各特征对应的id 从1开始 reserved_feature_name的顺序和feature_path中的顺序是一致的
             feature_id_dict = {v:(ind) for ind, v in enumerate(reserved_feature_name)}
 
@@ -177,23 +182,31 @@ class Preprocessor(object):
         elif to_file:
             write_to_file([(ind+1, x) for ind, x in enumerate(vectorizer.get_feature_names())],
                     feature_path, write_func=lambda x: "%d\t%s" % x)
-        log.info("train feature vec shape: %s." % str(train_feature_vec.shape))
+        logging.info("train feature vec shape: %s." % str(train_feature_vec.shape))
         if split_train_test:
-            log.info("test feature vec shape: %s." % str(val_feature_vec.shape))
-        
+            logging.info("test feature vec shape: %s." % str(val_feature_vec.shape))
+
         if to_file:
-            log.info("trans to libsvm data file.")
-            start_time = time.time()
-            dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
-            if split_train_test:
-                dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
-            log.info("cost_time : %.4f" % (time.time() - start_time))
-        
+            if libsvm_format:
+                logging.info("trans to libsvm data file.")
+                start_time = time.time()
+                dump_libsvm_file(train_feature_vec, train_label, process_file_path.train_lib_format_path)
+                if split_train_test:
+                    dump_libsvm_file(val_feature_vec, val_label, process_file_path.val_lib_format_path)
+                logging.info("cost_time : %.4f" % (time.time() - start_time))
+            else:
+                logging.info("dump data to pkl.")
+                start_time = time.time()
+                dump_pkl((train_feature_vec, train_label), process_file_path.train_pkl_path, True)
+                if split_train_test:
+                    dump_pkl((val_feature_vec, val_label), process_file_path.val_pkl_path, True)
+                logging.info("cost_time : %.4f" % (time.time() - start_time))
+
         if not split_train_test:
             val_feature_vec = None
             val_label = None
 
-        return  train_feature_vec, train_label, val_feature_vec, val_label
+        return  vectorizer, train_feature_vec, train_label, val_feature_vec, val_label
 
 
 if __name__ == "__main__":
@@ -228,13 +241,13 @@ if __name__ == "__main__":
         if line_process_num % 4000 == 0:
             text = "||".join(parts[1:3])
             seg_text = "/ ".join(feature_generator.seg_words(text))
-            log.debug("process line num #%d" % line_process_num)
-            log.debug("origin  : %s" % text.encode("gb18030"))
-            log.debug("="*150)
-            log.debug("seg res : %s" % seg_text.encode("gb18030"))
+            logging.debug("process line num #%d" % line_process_num)
+            logging.debug("origin  : %s" % text.encode("gb18030"))
+            logging.debug("="*150)
+            logging.debug("seg res : %s" % seg_text.encode("gb18030"))
         features = feature_list if duplicate else set(feature_list)
         return (label, " ".join(features))
-    
+
 
     test_processor = Preprocessor(
             feature_gen_func=feature_label_gen,

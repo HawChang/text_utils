@@ -94,7 +94,7 @@ def liblinear_train(
             log.warning("feature_weight_file relies on feature_name_list to creat. exit.")
         else:
             gen_feature_weight_file(model_path, feature_name_list, feature_weight_save_path)
-    
+
     log.info("liblinear train finish")
 
 

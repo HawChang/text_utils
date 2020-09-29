@@ -13,6 +13,8 @@ Date: 2019/11/21 20:37:58
 """
 
 import codecs
+import logging
+import numpy as np
 import os
 import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,9 +26,6 @@ from lr_model import LRModel
 from preprocess import Preprocessor
 from utils.data_io import write_to_file
 from utils.for_def_user import LabelEncoder
-from utils.logger import Logger
-
-log = Logger().get_logger()
 
 class BaseLRModel(object):
     """LR分类模型基础类
@@ -43,11 +42,11 @@ class BaseLRModel(object):
         self.pred_res_path = os.path.join(output_dir, "pred_res.txt")
         self.wrong_pred_res_path = os.path.join(output_dir, "wrong_pred_res.txt")
         self.right_pred_res_path = os.path.join(output_dir, "right_pred_res.txt")
-        
+
         self.label_encoder = LabelEncoder(self.class_id_path)
         self.label_thres = BaseLRModel.load_label_thres(self.class_id_path)
         self.lr_model = LRModel()
-        #print("\n".join(["%s:%d" % x for x in self.label_encoder.label_id_dict.items()]).encode("gb18030"))
+        logging.debug("\n".join(["%s:%d" % x for x in self.label_encoder.label_id_dict.items()]).encode("gb18030"))
 
     @staticmethod
     def load_label_thres(file_name):
@@ -103,7 +102,7 @@ class BaseLRModel(object):
                 test_ratio=test_ratio,
                 min_df=min_df)
 
-        train_data, train_label, val_data, val_label = preprocessor.gen_data_vec(
+        _, train_data, train_label, val_data, val_label = preprocessor.gen_data_vec(
                 data_dir,
                 self.feature_id_path,
                 split_train_test=split_train_test,
@@ -119,12 +118,13 @@ class BaseLRModel(object):
         """
         raise NotImplementedError("function feature_label_gen should be over written.")
 
-    def train(self, train_lib_format_path):
+    def train(self, train_lib_format_path, liblinear_train_path):
         """
         """
         self.lr_model.liblinear_train(
                 train_lib_format_path,
-                self.model_path)
+                self.model_path,
+                liblinear_train_path)
 
         self.lr_model.save_in_feature_weight_format(
                 feature_weight_save_path=self.feature_weight_path,
@@ -135,7 +135,7 @@ class BaseLRModel(object):
         """
         """
         if not self.lr_model.model_loaded:
-            log.debug("model not loaded")
+            logging.debug("model not loaded")
             self.lr_model.load_model(
                     model_path=self.model_path,
                     feature_id_path=self.feature_id_path)
@@ -162,6 +162,15 @@ class BaseLRModel(object):
         write_to_file(pred_info_list, self.pred_res_path)
         write_to_file(wrong_info_list, self.wrong_pred_res_path)
         print(classification_report(real_label_list, pred_label_list, digits=4).encode("gb18030"))
+
+        real_label_list = np.array(real_label_list)
+        pred_label_list = np.array(pred_label_list)
+        correct_num = sum(real_label_list==pred_label_list)
+        total_num = len(real_label_list)
+        acc = correct_num / float(total_num)
+        print("acc = %.4f(%d/%d)" % (acc, correct_num, total_num))
+
+
 
 
 if __name__ == "__main__":
