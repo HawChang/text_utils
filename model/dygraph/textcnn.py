@@ -106,27 +106,27 @@ class TextCNN(D.Layer):
     def forward(self, inputs, labels=None, logits_softmax=False):
         """前向预测
         """
-        #print("\n".join(map(lambda ids: "/ ".join([id_2_token[x] for x in ids]), inputs.numpy())))
+        #logging.info("\n".join(map(lambda ids: "/ ".join([id_2_token[x] for x in ids]), inputs.numpy())))
         # inputs shape = [batch_size, seq_len]
-        #print("inputs shape: {}".format(inputs.shape))
+        #logging.info("inputs shape: {}".format(inputs.shape))
 
         # emb shape = [batch_size, seq_len, emb_dim]
         emb = self.embedding(inputs)
-        #print("emb shape: {}".format(emb.shape))
+        #logging.info("emb shape: {}".format(emb.shape))
 
         # emb shape = [batch_size, 1, seq_len, emb_dim]
         emb = L.unsqueeze(emb, axes=[1])
-        #print("emb shape: {}".format(emb.shape))
+        #logging.info("emb shape: {}".format(emb.shape))
 
         conv_pool_res_list = [conv_pool(emb) for conv_pool in self.conv_pool_list]
 
         conv_pool_res = L.concat(conv_pool_res_list, axis=-1)
 
         hid_fc = self._hid_fc(conv_pool_res)
-        #print("hid_fc shape: {}".format(hid_fc.shape))
+        #logging.info("hid_fc shape: {}".format(hid_fc.shape))
 
         logits = self._output_fc(hid_fc)
-        #print("logits shape: {}".format(logits.shape))
+        #logging.info("logits shape: {}".format(logits.shape))
 
         # 输出logits为softmax后的结果
         if logits_softmax:
@@ -139,7 +139,7 @@ class TextCNN(D.Layer):
         # 调整label的形状
         if len(labels.shape) == 1:
             labels = L.reshape(labels, [-1, 1])
-        #print("labels shape: {}".format(labels.shape))
+        #logging.info("labels shape: {}".format(labels.shape))
 
         loss = L.softmax_with_cross_entropy(logits, labels)
         # 如果输出logits的激活函数为softmax 则不能用softmax_with_cross_entropy
