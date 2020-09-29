@@ -28,8 +28,6 @@ from utils.logger import Logger
 from utils.data_io import read_from_file
 from utils.data_io import write_to_file
 from utils.parameter_optimizer import grid_search_cv
-from utils.file_manager import FileManager
-from feature.feature_generator import FeatureGenerator
 from preprocess import Preprocessor
 
 log = Logger().get_logger()
