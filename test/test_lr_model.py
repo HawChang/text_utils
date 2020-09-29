@@ -31,6 +31,7 @@ class TestLRModel(unittest.TestCase):
     def setUpClass(cls):
         test_data_dir = "./test/data/classification_data/toutiao_news"
         TestLRModel.test_output_dir = "./test/output"
+        TestLRModel.model_path = os.path.join(TestLRModel.test_output_dir, "lr_feature_weight.model")
 
         test_size = 0.2
         random_state = 1
@@ -79,7 +80,6 @@ class TestLRModel(unittest.TestCase):
             logging.info("feature: {}".format(feature))
 
     def test_lr_model_train(self):
-        self.model_path = os.path.join(self.test_output_dir, "lr_feature_weight.model")
         lr_model = LRModel()
         lr_model.train(self.train_x, self.train_y)
 
@@ -88,7 +88,8 @@ class TestLRModel(unittest.TestCase):
     def test_lr_model_eval(self):
         eval_res_path = os.path.join(self.test_output_dir, "eval_res.txt")
         eval_diff_path = os.path.join(self.test_output_dir, "eval_diff.txt")
-        lr_model = LRModel.load(model_path=self.model_path)
+        lr_model = LRModel()
+        lr_model.load(model_path=self.model_path)
         lr_model.eval(
                 eval_feature=self.test_x,
                 eval_label=[self.label_encoder.inverse_transform(x) for x in self.test_y],
@@ -102,12 +103,13 @@ class TestLRModel(unittest.TestCase):
 
 if __name__ == "__main__":
     # 运行所有测试用例
-    unittest.main()
+    #unittest.main()
 
     # 运行指定测试用例
     # 构造测试集
-    #suit = unittest.TestSuite()
-    #suit.addTest(TestLRModel("test_load_fasttext"))
-    #runner = unittest.TextTestRunner()
-    #runner.run(suit)
+    suit = unittest.TestSuite()
+    suit.addTest(TestLRModel("test_lr_model_train"))
+    suit.addTest(TestLRModel("test_lr_model_eval"))
+    runner = unittest.TextTestRunner()
+    runner.run(suit)
 
