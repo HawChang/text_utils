@@ -23,9 +23,9 @@ sys.path.append(os.path.join(_cur_dir, "../../"))
 from lib.common.data_io import gen_batch_data
 
 def train(model, optimizer, train_data, eval_data, label_encoder,
-        model_save_path=None, best_model_save_path=None,
-        epochs=5, batch_size=32, max_seq_len=300,
-        max_ensure=False, best_acc=0, print_step=50, logits_softmax=True):
+          model_save_path=None, best_model_save_path=None,
+          epochs=5, batch_size=32, max_seq_len=300,
+          max_ensure=False, best_acc=0, print_step=50, logits_softmax=True):
     """ 训练dygraph模型
     [IN]  model: dygraph模型结构
           optimizer: 优化器
@@ -172,8 +172,8 @@ def eval(model, eval_data, label_encoder, batch_size=32, max_seq_len=300,
     all_pred, all_label = batch_infer(model, eval_data, batch_size,
             max_seq_len, print_step, logits_softmax)
 
-    all_pred = map(lambda x: label_encoder.inverse_transform(x), all_pred)
-    all_label = map(lambda x: label_encoder.inverse_transform(x), all_label)
+    all_pred = [label_encoder.inverse_transform(x) for x in all_pred]
+    all_label = [label_encoder.inverse_transform(x) for x in all_label]
     if report:
         logging.info("\n" + classification_report(all_label, all_pred, digits=4))
     acc = (np.array(all_label) == np.array(all_pred)).astype(np.float32).mean()
@@ -338,6 +338,7 @@ def distill(model_t, model_s, optimizer, train_data, eval_data, label_encoder,
     model_t.train()
     logging.info("distill model cost time %.4fs" % (time.time() - distill_start_time))
     return best_acc
+
 
 if __name__ == "__main__":
     pass
