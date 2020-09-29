@@ -28,17 +28,19 @@ from utils.data_io import dump_libsvm_file
 from utils.softmax import softmax
 
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import classification_report
 
 from tempfile import NamedTemporaryFile
 
 
-def argsort(number_list):
+def arg_sort(number_list):
     """排序由小到大，但返回的是下标排序结果
     例如：
-        数组a=[3,5,4,2,1] 则argsort(a)=[4,3,0,2,1]：表示第4位是a数组中值最小的,第3位是a数组中第二小的
+        数组a=[3,5,4,2,1] 则arg_sort(a)=[4,3,0,2,1]：表示第4位是a数组中值最小的,第3位是a数组中第二小的
     [in] number_list: list[可直接比较大小的元素], 待排序列表
     """
     return sorted(range(len(number_list)), key=lambda x:number_list[x])
+
 
 class LRModel(object):
     def __init__(self):
@@ -52,22 +54,17 @@ class LRModel(object):
         self.feature_weight_dict = None
         self.softmax_feature_weight_dict = None
 
-    def train(self,
-            train_feature,
-            train_label,
-            tmp_dir = "/tmp",
-            token_pattern=r'(?u)[^ ]+',
-            min_df = 2,
-            liblinear_train_path="/home/users/zhanghao55/workspace/tools/liblinear-2.20/train",
-            model_conf="-s 0",
-            ):
+    def train(self, train_feature, train_label,
+              liblinear_train_path="./liblinear/train",
+              tmp_dir="/tmp", token_pattern=r'(?u)[^ ]+', min_df=2,
+              model_conf="-s 0"):
         """训练LR模型
         [in]  train_feature: list[list[str]], 训练数据特征的列表
               train_label: list[int], 训练标签
+              liblinear_train_path: str, liblinear训练工具地址
               tmp_dir: str, 训练时临时文件存放的目录
               token_pattern: str, vectorizer用于划分token的模板
               min_df: int, 特征频率最小阈值
-              liblinear_train_path: str, liblinear训练工具地址
               model_conf: str, 训练时参数
               例如:
               L2-regularized logistic regression (primal): -s 0 （默认训练参数）
@@ -120,10 +117,10 @@ class LRModel(object):
                 elif index == 2:
                     labels = [int(x) for x in line.split(" ")[1:]]
                     assert class_num == len(labels), "class num(%d) != labels size(%d)." % (class_num, len(labels))
-                    # 数组a=[3,5,4,2,1] 则argsort(a)=[4,3,0,2,1]：表示第4位是a数组中值最小的,第3位是a数组中第二小的
+                    # 数组a=[3,5,4,2,1] 则arg_sort(a)=[4,3,0,2,1]：表示第4位是a数组中值最小的,第3位是a数组中第二小的
                     # index_transfer是类别数组，各列按类别的值(类别由LabelEncoder编码后,为整数，可比较)排序的结果
                     # index_transfer[i]=j表示，第i小的类别是第j列
-                    index_transfer = argsort(labels)
+                    index_transfer = arg_sort(labels)
                     logging.info("position rank: " + ",".join([str(x) for x in index_transfer]))
                     for class_index in range(class_num):
                         self.label_list.append(str(labels[index_transfer[class_index]]))
@@ -186,8 +183,8 @@ class LRModel(object):
             for index, line in enumerate(rf):
                 line = line.strip("\n")
                 if index == 0:
-                    self.label_list = line.split(" ")[-1].split(",")
-                    class_num  = len(self.label_list)
+                    self.label_list = [int(x) for x in line.split(" ")[-1].split(",")]
+                    class_num = len(self.label_list)
                     assert class_num > 1, "class num should greater than 1, actual {}".format(class_num)
                     continue
 
@@ -276,6 +273,60 @@ class LRModel(object):
             cur_res = self._single_predict(features, **kwargs)
             pred_res.append(cur_res)
         return pred_res
+
+    def eval(self, eval_feature, eval_label, eval_text_info=None, default_label=0, label_trans_func=None,
+             eval_res_path=None, eval_diff_path=None):
+        """根据eval数据集评估模型效果
+        [in]  eval_data: list[list[str]], 特征列表的列表
+              eval_label: list[Any], 标签列表
+              eval_text_info: list[str], eval数据文本
+              label_trans_func: function, 转换模型输出标签的函数，None则不转换
+              eval_res_path: str, eval结果地址
+              eval_diff_path: str, eval结果中diff记录的地址
+        """
+        pred_res = self.predict(eval_feature)
+        wf_list = list()
+        try:
+            eval_res_wf = None
+            eval_diff_wf = None
+
+            if eval_res_path is not None:
+                eval_res_wf = codecs.open(eval_res_path, "w", "utf-8")
+                wf_list.append(eval_res_wf)
+            if eval_diff_path is not None:
+                eval_diff_wf = codecs.open(eval_diff_path, "w", "utf-8")
+                wf_list.append(eval_diff_wf)
+
+            if eval_text_info is None:
+                eval_text_info = ["\x01".join(x) for x in eval_feature]
+
+            pred_label = list()
+            for cur_pred_res, cur_eval_label, cur_text in zip(pred_res, eval_label, eval_text_info):
+                cur_label = default_label
+                cur_rate = "0"
+                cur_evidence = "NULL"
+                if len(cur_pred_res) > 0:
+                    cur_label, cur_rate, cur_evidence = cur_pred_res[0]
+                cur_label = label_trans_func(cur_label)
+                pred_label.append(cur_label)
+                if len(wf_list) > 0:
+                    record = "\t".join([
+                        cur_label,
+                        cur_rate,
+                        cur_eval_label,
+                        cur_text,
+                        cur_evidence,
+                    ]) + "\n"
+
+                    if eval_res_path is not None:
+                        eval_res_wf.write(record)
+                    if eval_diff_path is not None and cur_label != cur_eval_label:
+                        eval_diff_wf.write(record)
+
+            print(classification_report(eval_label, pred_label, digits=4))
+        finally:
+            for wf in wf_list:
+                wf.close()
 
     def _single_predict(self, features, min_conf=0.05, digits=4, evidence=False, topk=10):
         """根据特征列表预测结果

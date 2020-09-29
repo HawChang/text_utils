@@ -32,21 +32,24 @@ class TestLRModel(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        data_path = "./test/data/classification/data.txt"
+        test_data_dir = "./test/data/classification_data/toutiao_news"
+        TestLRModel.test_output_dir = "./test/output"
+
         test_size = 0.2
         random_state = 1
         shuffle = True
         example_num = 5
 
-        tokenizer_path = "./test/output/lr_tokenizer_config"
-        label_id_path = "./test/data/classification/class_id.txt"
+        label_id_path = os.path.join(test_data_dir, "class_id.txt")
         TestLRModel.label_encoder = LabelEncoder(label_id_path, isFile=True)
         logging.info("label num = {}".format(TestLRModel.label_encoder.size()))
 
         # 加载数据
+        data_path = os.path.join(test_data_dir, "toutiao_news_shrink.txt")
         label_list, text_list = get_attr_values(data_path, fetch_list=["label", "text"], encoding="utf-8")
         logging.info("data num = {}".format(len(label_list)))
 
+        tokenizer_path = os.path.join(TestLRModel.test_output_dir, "lr_tokenizer.config")
         if os.path.exists(tokenizer_path):
             TestLRModel.tokenizer = LRTokenizer.load(tokenizer_path)
         else:
@@ -60,9 +63,9 @@ class TestLRModel(unittest.TestCase):
         label_ids = [TestLRModel.label_encoder.transform(label_name) for label_name in label_list]
 
         TestLRModel.train_text, TestLRModel.test_text, TestLRModel.train_x, \
-                TestLRModel.test_x, TestLRModel.train_y, TestLRModel.test_y = \
-                train_test_split(text_list, feature_list, label_ids, \
-                test_size=test_size, random_state=random_state, shuffle=shuffle)
+            TestLRModel.test_x, TestLRModel.train_y, TestLRModel.test_y = \
+            train_test_split(text_list, feature_list, label_ids,
+                             test_size=test_size, random_state=random_state, shuffle=shuffle)
         logging.info("train num = {}".format(len(TestLRModel.train_y)))
         logging.info("test num = {}".format(len(TestLRModel.test_y)))
 
@@ -79,46 +82,24 @@ class TestLRModel(unittest.TestCase):
             logging.info("feature: {}".format(feature))
 
     def test_lr_model_train(self):
+        model_path = os.path.join(self.test_output_dir, "lr_feature_weight.model")
+        eval_res_path = os.path.join(self.test_output_dir, "eval_res.txt")
+        eval_diff_path = os.path.join(self.test_output_dir, "eval_diff.txt")
 
-        logging.info("in test_lr_model_train")
         lr_model = LRModel()
-        #train_str_list = [" ".join(x) for x in self.train_x]
         lr_model.train(self.train_x, self.train_y)
 
-        model_path = "./test/output/lr_feature_weight.model"
         lr_model.save(model_path)
 
-        pred_res = lr_model.predict(self.test_x)
-        res_before_load = [[res[0][0], res[0][1]] if len(res) != 0 else ["0", "NULL"] for res in pred_res]
-
-        lr_model = LRModel()
-        lr_model.load(model_path)
-        pred_res = lr_model.predict(self.test_x)
-        res_after_load = [[res[0][0], res[0][1]] if len(res) != 0 else ["0", "NULL"] for res in pred_res]
-
-        eval_res_path = "./test/output/eval_res.txt"
-        with codecs.open(eval_res_path, "w", "gb18030") as wf:
-            for (res_before_label, res_before_rate), (res_after_label, res_after_rate), label_id, text \
-                    in zip(res_before_load, res_after_load, self.test_y, self.test_text):
-                res_before_label_name = self.label_encoder.inverse_transform(int(res_before_label))
-                res_after_label_name = self.label_encoder.inverse_transform(int(res_after_label))
-                label_name = self.label_encoder.inverse_transform(label_id)
-                wf.write("\t".join([
-                        res_before_label_name,
-                        res_before_rate,
-                        res_after_label_name,
-                        res_after_rate,
-                        label_name,
-                        text
-                        ]) + "\n")
-
-        #eval_res_path = "./test/output/eval_res.txt"
-        #eval_diff_path = "./test/output/eval_diff.txt"
-        #acc = lr_model.eval(self.test_x, self.test_y,
-        #        pred_res_path=eval_res_path,
-        #        pred_diff_path=eval_diff_path)
-
-        #pred_res = lr_model.pred(self.test_x)
+        lr_model.eval(
+                eval_feature=self.test_x,
+                eval_label=[self.label_encoder.inverse_transform(x) for x in self.test_y],
+                eval_text_info=self.test_text,
+                default_label=self.label_encoder.other_label_id,
+                label_trans_func=lambda x: self.label_encoder.inverse_transform(int(x)),
+                eval_res_path=eval_res_path,
+                eval_diff_path=eval_diff_path,
+                )
 
 if __name__ == "__main__":
     # 运行所有测试用例

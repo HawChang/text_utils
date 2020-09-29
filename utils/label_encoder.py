@@ -17,10 +17,11 @@ import codecs
 class LabelEncoder(object):
     """类别处理工具
     """
-    def __init__(self, label_id_info, isFile=True):
+    def __init__(self, label_id_info, other_label_id=0, other_label_name="Other", isFile=True):
         """初始化类别编码类
         [in]  label_id_info: str/dict, 类别及其对应id的信息
               isFile: bool, 说明信息是字典还是文件，若是文件则从其中加载信息
+              
         """
         if isFile:
             self.label_id_dict = self.load_class_id_file(label_id_info)
@@ -36,6 +37,14 @@ class LabelEncoder(object):
             else:
                 raise ValueError("unknown label_id_info type: {}".format(type(label_id_info)))
         self.id_label_dict = {v: k for k, v in self.label_id_dict.items()}
+        assert other_label_id not in self.id_label_dict, \
+            "label_id duplicates the OtherLabelID: {}".format(other_label_id)
+        assert other_label_name not in self.label_id_dict, \
+            "label_name duplicates the OtherLabelName: {}".format(other_label_name)
+        self.other_label_name = other_label_name
+        self.other_label_id = other_label_id
+        self.label_id_dict[other_label_name] = other_label_id
+        self.id_label_dict[other_label_id] = other_label_name
         assert len(self.label_id_dict) == len(self.id_label_dict), "dict is has duplicate key or value."
 
     def load_class_id_file(self, label_id_path):
