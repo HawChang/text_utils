@@ -210,7 +210,7 @@ def gen_batch_data(data_iter, batch_size=32, max_seq_len=300, max_ensure=False, 
 
     def batch_process(cur_batch_data, cur_batch_size):
         batch_list = list()
-        data_lists = zip(*cur_batch_data)
+        data_lists = list(zip(*cur_batch_data))
         #print("cur batch_size = {}".format(cur_batch_size))
         if with_label:
             label_list = data_lists[-1]
