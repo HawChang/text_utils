@@ -79,15 +79,16 @@ class TestLRModel(unittest.TestCase):
             logging.info("feature: {}".format(feature))
 
     def test_lr_model_train(self):
-        model_path = os.path.join(self.test_output_dir, "lr_feature_weight.model")
-        eval_res_path = os.path.join(self.test_output_dir, "eval_res.txt")
-        eval_diff_path = os.path.join(self.test_output_dir, "eval_diff.txt")
-
+        self.model_path = os.path.join(self.test_output_dir, "lr_feature_weight.model")
         lr_model = LRModel()
         lr_model.train(self.train_x, self.train_y)
 
-        lr_model.save(model_path)
+        lr_model.save(self.model_path)
 
+    def test_lr_model_eval(self):
+        eval_res_path = os.path.join(self.test_output_dir, "eval_res.txt")
+        eval_diff_path = os.path.join(self.test_output_dir, "eval_diff.txt")
+        lr_model = LRModel.load(model_path=self.model_path)
         lr_model.eval(
                 eval_feature=self.test_x,
                 eval_label=[self.label_encoder.inverse_transform(x) for x in self.test_y],
@@ -97,6 +98,7 @@ class TestLRModel(unittest.TestCase):
                 eval_res_path=eval_res_path,
                 eval_diff_path=eval_diff_path,
                 )
+
 
 if __name__ == "__main__":
     # 运行所有测试用例
