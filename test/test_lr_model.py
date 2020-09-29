@@ -7,17 +7,14 @@ Date  :   20/09/28 11:32:25
 Desc  :   
 """
 
-import codecs
 import logging
 import os
 import sys
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 from sklearn.model_selection import train_test_split
-import time
 import unittest
 
-#from utils.data_io import get_data
 from utils.data_io import get_attr_values
 from utils.label_encoder import LabelEncoder
 from utils.logger import init_log
