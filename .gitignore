@@ -4,6 +4,9 @@
 # py编译文件
 *.pyc
 
+# pycharm文件
+.idea/*
+
 # 切词工具
 dict/chinese_gbk.tar.gz
 dict/chinese_gbk/
