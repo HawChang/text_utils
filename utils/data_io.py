@@ -40,7 +40,7 @@ def get_data(data_path, read_func=lambda x:x, header=False, encoding="gb18030", 
             yield line
 
 
-def get_file_name_list(data_path, verbose=False):
+def get_file_name_list(data_path, verbose=True):
     """生成构成数据集的文件列表
         如果数据集地址是文件，则返回列表中只有该文件地址
         如果数据集地址是目录，则返回列表中包括该目录下所有文件名称(忽略'.'开头的文件)
@@ -54,7 +54,8 @@ def get_file_name_list(data_path, verbose=False):
     path_stack.append(data_path)
     while len(path_stack) != 0:
         cur_path = path_stack.pop()
-        logging.debug("check data path: %s." % cur_path)
+        if verbose:
+            logging.debug("check data path: %s" % cur_path)
         # 首先检查原始数据是文件还是文件夹
         if os.path.isdir(cur_path):
             #logging.debug("data path is directory.")
@@ -71,10 +72,10 @@ def get_file_name_list(data_path, verbose=False):
             file_list.append(cur_path)
         else:
             raise TypeError("unknown type of data path : %s" % cur_path)
-
-    logging.info("file list top 20:")
-    for index, file_name in enumerate(file_list[:20]):
-        logging.info("#%d: %s" % (index + 1, file_name))
+    if verbose:
+        logging.debug("file list top 20:")
+        for index, file_name in enumerate(file_list[:20]):
+            logging.debug("#%d: %s" % (index + 1, file_name))
     return file_list
 
 
@@ -125,7 +126,8 @@ def write_to_file(text_list, dst_file_path, write_func=lambda x:x, encoding="gb1
         # 不能直接全部join 有些数据过大 应该for
         #wf.write("\n".join([write_func(x) for x in text_list]))
         for text in text_list:
-            #print(text)
+            if text is None:
+                continue
             res = write_func(text)
             if res is None:
                 continue
@@ -157,7 +159,7 @@ def dump_pkl(obj, pkl_path, overwrite=False):
         logging.debug("save to \"%s\" succeed." % pkl_path)
 
 
-def label_encoder_save_as_class_id(label_encoder, class_id_path, conf_thres = 0.5):
+def label_encoder_save_as_class_id(label_encoder, class_id_path, conf_thres=0.5):
     """将LabelEncoder对象转为def-user中的class_id.txt格式的形式存入指定文件
     [in]  label_encoder: class, 对象
           class_id_path: str, 存储文件地址
@@ -240,4 +242,4 @@ def gen_batch_data(data_iter, batch_size=32, max_seq_len=300, max_ensure=False, 
 
 
 if __name__ == "__main__":
-    get_file_name_list("jinyong")
+    pass
