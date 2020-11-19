@@ -117,12 +117,13 @@ class Preprocessor(object):
             data_list = get_data(data_path)
             # 调用函数 生成特征
             feature_list = [self.feature_gen_func(x) for x in data_list]
+            feature_list = [x for x in feature_list if x is not None]
             if to_file:
                 # 存储数据信息
                 write_to_file(data_list, process_file_path.total_data_path)
                 # 存储特征信息
                 write_to_file(feature_list, process_file_path.total_feature_path, \
-                        write_func=lambda x : "{}\t{}".format(x[0], x[1]))
+                        write_func=lambda x : "%d\t%s" % (x[0], x[1]))
             logging.info("cost_time : %.4f" % (time.time() - start_time))
         else:
             logging.info("load data feature.")

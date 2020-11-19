@@ -226,9 +226,9 @@ def distill(model_t, model_s, optimizer, train_data, eval_data, label_encoder,
     [OUT] best_acc: float, 蒸馏得到的最优acc
     """
     logging.info("distill model start")
-    # teacher模型进入eval即可
+    # teacher模型转为eval状态
     model_t.eval()
-    # student模型进入train模式
+    # student模型转为train状态
     model_s.train()
 
     # 训练信息统计
@@ -241,6 +241,7 @@ def distill(model_t, model_s, optimizer, train_data, eval_data, label_encoder,
     for cur_epoch in range(epochs):
         # 每个epoch都shuffle数据以获得最佳训练效果；
         np.random.shuffle(train_data)
+        # 获得标注物料迭代器
         train_data_batch = gen_batch_data(train_data, batch_size=batch_size, max_seq_len=max_seq_len)
         # 标注数据训练
         for cur_train_data, cur_train_label in train_data_batch:
@@ -253,18 +254,19 @@ def distill(model_t, model_s, optimizer, train_data, eval_data, label_encoder,
             with D.base._switch_tracer_mode_guard_(is_train=False):
                 # softmax前的logits
                 logits_t = model_t(cur_train_data, logits_softmax=False)
-            # teacher模型停止反向传播
+            # teacher模型不反向传播
             logits_t.stop_gradient=True
             # student模型的结果
-            loss_s, logits_s = model_s(cur_train_data, labels=cur_train_label, logits_softmax=False)
+            loss_s, logits_s = model_s(cur_train_data, labels=cur_train_label)
             # 计算两模型输出的KL损失
             loss_kl = KL(logits_s, logits_t, temperature=temperature)
             # 合并损失
             loss = pow(temperature, 2) * loss_kl + loss_s
-            # 反向传播
+            # 反向传播 计算梯度
             loss.backward()
+            # 更新
             optimizer.minimize(loss)
-            # 清空梯度
+            # 清空本次梯度
             model_s.clear_gradients()
             total_train_with_label_time += (time.time() - train_with_label_time_begin)
             if cur_train_step % print_step == 0:

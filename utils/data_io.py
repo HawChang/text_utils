@@ -278,4 +278,4 @@ def gen_batch_data(data_iter, batch_size=32, max_seq_len=300, max_ensure=False, 
 
 
 if __name__ == "__main__":
-    get_file_name_list("jinyong")
+    pass
