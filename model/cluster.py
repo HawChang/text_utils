@@ -42,7 +42,12 @@ def cluster_score(X, y_pred):
         logging.info("Calinski-Harabasz Score : %.4f" % score)
     except ValueError as e:
         score = -1.0
-        logging.info("Calinski-Harabasz Score Fail : %.4f" % score)
+        logging.info("caculate score fail.")
+        logging.info(e)
+    except Exception as e:
+        score = -1.0
+        logging.info("caculate score fail.")
+        logging.info(e)
     return score
 
 
