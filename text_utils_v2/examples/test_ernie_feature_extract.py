@@ -20,7 +20,7 @@ from ernie.modeling_ernie import ErnieModel
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 from text_utils.tokenizers.ernie_tokenizer import ErnieTokenizer
-from text_utils.utils.data_io import get_attr_values, gen_batch_data
+from text_utils.utils.data_io import get_attr_values
 #from text_utils.utils.data_io import write_to_file
 from text_utils.models.dygraph.train_infer_utils import batch_infer
 from text_utils.utils.logger import init_log

@@ -13,7 +13,7 @@ from ernie.modeling_ernie import ErnieModelForSequenceClassification
 from ernie.file_utils import add_docstring
 
 
-class ErnieModelCustomized(ErnieModelForSequenceClassification):
+class ErnieSequenceClassificationCustomized(ErnieModelForSequenceClassification):
     """定制化ernie分类模型 
         1. forward函数添加logits_softmax参数
         2. 没有label时, 只返回logits
@@ -31,8 +31,9 @@ class ErnieModelCustomized(ErnieModelForSequenceClassification):
             logits (`Variable` of shape [batch_size, hidden_size]):
                 output logits of classifier
         """
+
         logits_softmax = kwargs.pop("logits_softmax", False)
-        loss, logits = super(ErnieModelCustomized, self).forward(*args,
+        loss, logits = super(ErnieSequenceClassificationCustomized, self).forward(*args,
                 **kwargs)
         if logits_softmax:
             logits = L.softmax(logits, use_cudnn=True)

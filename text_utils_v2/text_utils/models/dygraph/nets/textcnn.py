@@ -52,35 +52,23 @@ class ConvPool(D.Layer):
 
 
 class TextCNN(D.Layer):
-    """textcnn分类模型
+    """textcnn层
     """
     def __init__(self,
-            num_class,
-            vocab_size,
-            emb_dim=32,
+            emb_dim,
             num_filters=10,
-            fc_hid_dim=32,
             num_channels=1,
             win_size_list=None,
-            is_sparse=True,
             use_cudnn=True,
             ):
         super(TextCNN, self).__init__()
 
-        self.embedding = D.Embedding(
-            size=[vocab_size, emb_dim],
-            dtype='float32',
-            is_sparse=is_sparse)
-
-        logging.info("num_class     = {}".format(num_class))
-        logging.info("vocab size    = {}".format(vocab_size))
-        logging.info("emb_dim       = {}".format(emb_dim))
-        logging.info("num filters   = {}".format(num_filters))
-        logging.info("fc_hid_dim    = {}".format(fc_hid_dim))
-        logging.info("num channels  = {}".format(num_channels))
-        logging.info("win size list = {}".format(win_size_list))
-        logging.info("is sparse     = {}".format(is_sparse))
-        logging.info("use cudnn     = {}".format(use_cudnn))
+        #logging.info("emb_dim       = {}".format(emb_dim))
+        #logging.info("num filters   = {}".format(num_filters))
+        #logging.info("num channels  = {}".format(num_channels))
+        #logging.info("win size list = {}".format(win_size_list))
+        #logging.info("is sparse     = {}".format(is_sparse))
+        #logging.info("use cudnn     = {}".format(use_cudnn))
 
         if win_size_list is None:
             win_size_list = [3]
@@ -98,6 +86,61 @@ class TextCNN(D.Layer):
 
         self.conv_pool_list = D.LayerList([gen_conv_pool(win_size) for win_size in win_size_list])
 
+
+    def forward(self, input_emb):
+        """前向预测
+        """
+        # emb shape = [batch_size, 1, seq_len, emb_dim]
+        emb = L.unsqueeze(input_emb, axes=[1])
+        #print("emb shape: {}".format(emb.shape))
+
+        conv_pool_res_list = [conv_pool(emb) for conv_pool in self.conv_pool_list]
+
+        conv_pool_res = L.concat(conv_pool_res_list, axis=-1)
+
+        return conv_pool_res
+
+
+class TextCNNClassifier(D.Layer):
+    """textcnn分类模型
+    """
+    def __init__(self,
+            num_class,
+            vocab_size,
+            emb_dim=32,
+            num_filters=10,
+            fc_hid_dim=32,
+            num_channels=1,
+            win_size_list=None,
+            is_sparse=True,
+            use_cudnn=True,
+            ):
+        super(TextCNNClassifier, self).__init__()
+
+        self.embedding = D.Embedding(
+            size=[vocab_size, emb_dim],
+            dtype='float32',
+            is_sparse=is_sparse,
+            )
+
+        self.textcnn = TextCNN(
+            emb_dim,
+            num_filters,
+            num_channels,
+            win_size_list,
+            use_cudnn,
+            )
+
+        logging.info("num_class     = {}".format(num_class))
+        logging.info("vocab size    = {}".format(vocab_size))
+        logging.info("emb_dim       = {}".format(emb_dim))
+        logging.info("num filters   = {}".format(num_filters))
+        logging.info("fc_hid_dim    = {}".format(fc_hid_dim))
+        logging.info("num channels  = {}".format(num_channels))
+        logging.info("win size list = {}".format(win_size_list))
+        logging.info("is sparse     = {}".format(is_sparse))
+        logging.info("use cudnn     = {}".format(use_cudnn))
+
         self._hid_fc = D.Linear(input_dim=num_filters * len(win_size_list), output_dim=fc_hid_dim, act="tanh")
         self._output_fc = D.Linear(input_dim=fc_hid_dim, output_dim=num_class, act=None)
 
@@ -112,13 +155,7 @@ class TextCNN(D.Layer):
         emb = self.embedding(inputs)
         #print("emb shape: {}".format(emb.shape))
 
-        # emb shape = [batch_size, 1, seq_len, emb_dim]
-        emb = L.unsqueeze(emb, axes=[1])
-        #print("emb shape: {}".format(emb.shape))
-
-        conv_pool_res_list = [conv_pool(emb) for conv_pool in self.conv_pool_list]
-
-        conv_pool_res = L.concat(conv_pool_res_list, axis=-1)
+        conv_pool_res = self.textcnn(emb)
 
         hid_fc = self._hid_fc(conv_pool_res)
         #print("hid_fc shape: {}".format(hid_fc.shape))

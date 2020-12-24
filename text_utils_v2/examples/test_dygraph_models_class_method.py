@@ -25,7 +25,9 @@ from text_utils.utils.data_io import get_attr_values
 from text_utils.utils.data_io import write_to_file
 from text_utils.utils.label_encoder import LabelEncoder
 from text_utils.utils.logger import init_log
-from text_utils.models.dygraph.nets.textcnn import TextCNN
+from text_utils.models.dygraph.base_model import ClassificationModel
+from text_utils.models.dygraph.base_model import BaseModel
+from text_utils.models.dygraph.nets.textcnn import TextCNNClassifier
 from text_utils.models.dygraph.nets.gru import GRU
 from text_utils.models.dygraph.nets.ernie_for_sequence_classification import ErnieSequenceClassificationCustomized
 from text_utils.models.dygraph.train_infer_utils import train
@@ -121,14 +123,24 @@ class TestDygraphModels(unittest.TestCase):
                 "best_model_save_path": os.path.join(TestDygraphModels.test_output_dir, "textcnn_best"),
                 "epochs": 2,
                 "batch_size": 32,
+                "learning_rate": 5e-4,
                 "max_seq_len": 300,
                 "print_step": 200,
-                "learning_rate": 5e-4,
+                "load_best_model": True,
                 }
 
+        class TextCNNModel(ClassificationModel):
+            def build(self, **model_config):
+                self.model = TextCNNClassifier(**model_config)
+                self.built = True
+
         with D.guard():
-            textcnn_model = TextCNN(**textcnn_config)
-            best_acc = self.model_train_infer(textcnn_model, run_config)
+            textcnn_model = TextCNNModel()
+            textcnn_model.build(**textcnn_config)
+            best_acc = textcnn_model.train(
+                    TestDygraphModels.train_data, TestDygraphModels.eval_data,
+                    label_encoder=TestDygraphModels.label_encoder,
+                    **run_config)
         logging.info("textcnn best train score: {}".format(best_acc))
 
     def test_gru(self):
@@ -152,25 +164,18 @@ class TestDygraphModels(unittest.TestCase):
                 "learning_rate": 5e-4,
                 }
 
-        with D.guard():
-            gru_model = GRU(**gru_config)
-            #logging.info("parameters: {}".format(gru_model.parameters()))
-            load_model(gru_model, run_config["best_model_save_path"])
-            optimizer = F.optimizer.Adam(
-                    learning_rate=run_config["learning_rate"],
-                    parameter_list=gru_model.parameters())
+        class GRUModel(ClassificationModel):
+            def build(self, **model_config):
+                self.model = GRU(**model_config)
+                self.built = True
 
-            best_acc = train(gru_model, optimizer,
+        with D.guard():
+            gru_model = GRUModel()
+            gru_model.build(**gru_config)
+            best_acc = gru_model.train(
                     TestDygraphModels.train_data, TestDygraphModels.eval_data,
-                    TestDygraphModels.label_encoder, best_acc=0,
-                    model_save_path=run_config["model_save_path"],
-                    best_model_save_path=run_config["best_model_save_path"],
-                    epochs=run_config["epochs"],
-                    batch_size=run_config["batch_size"],
-                    max_seq_len=run_config["max_seq_len"],
-                    print_step=run_config["print_step"],
-                    )
-            #best_acc = self.model_train_infer(gru_model, run_config)
+                    label_encoder=TestDygraphModels.label_encoder,
+                    **run_config)
         logging.info("gru best train score: {}".format(best_acc))
 
     def test_ernie(self):
@@ -189,11 +194,19 @@ class TestDygraphModels(unittest.TestCase):
                 "learning_rate": 5e-5,
                 }
 
-        with D.guard():
-            ernie = ErnieSequenceClassificationCustomized.from_pretrained(**ernie_config)
-            best_acc = self.model_train_infer(ernie, run_config)
-        logging.info("ernie best train score: {}".format(best_acc))
+        class ErnieClassificationModel(ClassificationModel):
+            def build(self, **model_config):
+                self.model = ErnieSequenceClassificationCustomized.from_pretrained(**model_config)
+                self.built = True
 
+        with D.guard():
+            ernie_classification_model = ErnieClassificationModel()
+            ernie_classification_model.build(**ernie_config)
+            best_acc = ernie_classification_model.train(
+                    TestDygraphModels.train_data, TestDygraphModels.eval_data,
+                    label_encoder=TestDygraphModels.label_encoder,
+                    **run_config)
+        logging.info("ernie best train score: {}".format(best_acc))
 
 
 if __name__ == "__main__":
@@ -204,8 +217,8 @@ if __name__ == "__main__":
     # ππ‘Ï≤‚ ‘ºØ
     suit = unittest.TestSuite()
     suit.addTest(TestDygraphModels("test_textcnn"))
-    #suit.addTest(TestDygraphModels("test_gru"))
-    #suit.addTest(TestDygraphModels("test_ernie"))
+    suit.addTest(TestDygraphModels("test_gru"))
+    suit.addTest(TestDygraphModels("test_ernie"))
     runner = unittest.TextTestRunner()
     runner.run(suit)
 
