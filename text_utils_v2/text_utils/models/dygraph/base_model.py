@@ -18,6 +18,20 @@ import time
 
 from sklearn.metrics import classification_report
 
+
+def model_parallelized(strategy=None):
+    if strategy is None:
+        strategy = D.prepare_context()
+    def set_parallelized(func):
+        def wrapper(self, *args, **kwargs):
+            logging.info("set model parallelized")
+            func(self, *args, **kwargs)
+            self.model = D.DataParallel(self.model, strategy)
+            self.parallelized = True
+        return wrapper
+    return set_parallelized
+
+
 def gen_batch_data(data_iter, batch_size=32, max_seq_len=300, max_ensure=False):
     assert batch_size > 0, "batch_size should be greater than 0, actual= {}".format(batch_size)
     batch_data = list()
@@ -92,6 +106,7 @@ class BaseModel(object):
     def __init__(self):
         """初始化
         """
+        self.parallelized = False
         self.built = False
 
     def init_optimizer(self, learning_rate):
@@ -108,7 +123,8 @@ class BaseModel(object):
         """保存模型
         """
         start_time = time.time()
-        F.save_dygraph(self.model.state_dict(), save_path)
+        if self.parallelized and D.parallel.Env().local_rank == 0:
+            F.save_dygraph(self.model.state_dict(), save_path)
         logging.info("cost time: %.4fs" % (time.time() - start_time))
 
     def load_model(self, model_path):
@@ -157,17 +173,30 @@ class BaseModel(object):
         # 初始化优化器
         self.init_optimizer(learning_rate)
 
+        def train_data_reader():
+            return  gen_batch_data(train_data_list, batch_size, max_seq_len, max_ensure)
+
         cur_train_step = 0
         for cur_epoch in range(epochs):
             # 每个epoch都shuffle数据以获得最佳训练效果；
             np.random.shuffle(train_data_list)
-            train_data_batch = gen_batch_data(train_data_list, batch_size, max_seq_len, max_ensure)
+            train_data_batch = F.contrib.reader.distributed_batch_reader(train_data_reader)() \
+                    if self.parallelized else train_data_reader()
             for cur_train_batch in train_data_batch:
                 cur_train_step += 1
                 cur_train_batch = [D.to_variable(x) for x in cur_train_batch]
                 loss = self.get_loss(*cur_train_batch, **kwargs)
+                if self.parallelized:
+                    # 若多卡 则将各训练的loss归一化
+                    loss = self.model.scale_loss(loss)
                 # 反向传播
                 loss.backward()
+                if self.parallelized:
+                    # 若多卡 则各训练的梯度收集
+                    # 注意梯度更新时需要时LoDTensor，即为dense矩阵
+                    # 例如:embedding层的is_sparse参数需要为False,
+                    #      否则更新时将是稀疏更新, 多卡训练时会出错
+                    self.model.apply_collective_grads()
                 self.optimizer.minimize(loss)
                 # 清空梯度
                 self.model.clear_gradients()
@@ -276,7 +305,7 @@ class BaseModel(object):
         return tuple(infer_res_list)
 
 
-    def build(self, **kwargs):
+    def build(self, *args, **kwargs):
         """网络构建函数
         """
         raise NotImplementedError
@@ -306,6 +335,7 @@ class ClassificationModel(BaseModel):
     def __init__(self):
         """初始化
         """
+        super(ClassificationModel, self).__init__()
         self.best_acc = None
 
     def get_loss(self, *input_list, **kwargs):
@@ -359,6 +389,7 @@ class SiameseModel(BaseModel):
     def __init__(self):
         """初始化
         """
+        super(SiameseModel, self).__init__()
         self.min_loss = None
 
     def get_loss(self, *input_list, **kwargs):

@@ -174,7 +174,7 @@ class TextCNNClassifier(D.Layer):
         # 调整label的形状
         if len(labels.shape) == 1:
             labels = L.reshape(labels, [-1, 1])
-        #print("labels shape: {}".format(labels.shape))
+        #logging.info("labels shape: {}".format(labels.shape))
 
         loss = L.softmax_with_cross_entropy(logits, labels)
         # 如果输出logits的激活函数为softmax 则不能用softmax_with_cross_entropy

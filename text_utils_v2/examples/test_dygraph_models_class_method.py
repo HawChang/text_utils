@@ -8,30 +8,27 @@ Desc  :
 """
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import sys
 import logging
 import paddle.fluid as F
 import paddle.fluid.dygraph as D
-#import time
+import time
 import unittest
 
 from sklearn.model_selection import train_test_split
 
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
+from text_utils.models.dygraph.base_model import ClassificationModel
+from text_utils.models.dygraph.nets.ernie_for_sequence_classification import ErnieSequenceClassificationCustomized
+from text_utils.models.dygraph.nets.gru import GRU
+from text_utils.models.dygraph.nets.textcnn import TextCNNClassifier
 from text_utils.tokenizers.ernie_tokenizer import ErnieTokenizer
 from text_utils.utils.data_io import get_attr_values
 from text_utils.utils.data_io import write_to_file
 from text_utils.utils.label_encoder import LabelEncoder
 from text_utils.utils.logger import init_log
-from text_utils.models.dygraph.base_model import ClassificationModel
-from text_utils.models.dygraph.base_model import BaseModel
-from text_utils.models.dygraph.nets.textcnn import TextCNNClassifier
-from text_utils.models.dygraph.nets.gru import GRU
-from text_utils.models.dygraph.nets.ernie_for_sequence_classification import ErnieSequenceClassificationCustomized
-from text_utils.models.dygraph.train_infer_utils import train
-from text_utils.utils.data_io import load_model
 
 init_log()
 
@@ -87,24 +84,6 @@ class TestDygraphModels(unittest.TestCase):
             logging.info("text: {}".format(text.encode("utf-8")))
             logging.info("token_ids: {}".format(token_ids))
 
-    def model_train_infer(self, model, run_config):
-        load_model(model, run_config["best_model_save_path"])
-        optimizer = F.optimizer.Adam(
-                learning_rate=run_config["learning_rate"],
-                parameter_list=model.parameters())
-
-        best_acc = train(model, optimizer,
-                TestDygraphModels.train_data, TestDygraphModels.eval_data,
-                TestDygraphModels.label_encoder, best_acc=0,
-                model_save_path=run_config["model_save_path"],
-                best_model_save_path=run_config["best_model_save_path"],
-                epochs=run_config["epochs"],
-                batch_size=run_config["batch_size"],
-                max_seq_len=run_config["max_seq_len"],
-                print_step=run_config["print_step"],
-                )
-        return best_acc
-
     def test_textcnn(self):
         textcnn_config = {
                 "num_class": TestDygraphModels.label_encoder.size(),
@@ -126,9 +105,10 @@ class TestDygraphModels(unittest.TestCase):
                 "learning_rate": 5e-4,
                 "max_seq_len": 300,
                 "print_step": 200,
-                "load_best_model": True,
+                "load_best_model": False,
                 }
 
+        start_time = time.time()
         class TextCNNModel(ClassificationModel):
             def build(self, **model_config):
                 self.model = TextCNNClassifier(**model_config)
@@ -141,7 +121,7 @@ class TestDygraphModels(unittest.TestCase):
                     TestDygraphModels.train_data, TestDygraphModels.eval_data,
                     label_encoder=TestDygraphModels.label_encoder,
                     **run_config)
-        logging.info("textcnn best train score: {}".format(best_acc))
+        logging.warning("textcnn best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
 
     def test_gru(self):
         gru_config = {
@@ -162,8 +142,10 @@ class TestDygraphModels(unittest.TestCase):
                 "max_seq_len": 300,
                 "print_step": 200,
                 "learning_rate": 5e-4,
+                "load_best_model": False,
                 }
 
+        start_time = time.time()
         class GRUModel(ClassificationModel):
             def build(self, **model_config):
                 self.model = GRU(**model_config)
@@ -176,7 +158,7 @@ class TestDygraphModels(unittest.TestCase):
                     TestDygraphModels.train_data, TestDygraphModels.eval_data,
                     label_encoder=TestDygraphModels.label_encoder,
                     **run_config)
-        logging.info("gru best train score: {}".format(best_acc))
+        logging.warning("gru best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
 
     def test_ernie(self):
         ernie_config = {
@@ -192,8 +174,10 @@ class TestDygraphModels(unittest.TestCase):
                 "max_seq_len": 300,
                 "print_step": 100,
                 "learning_rate": 5e-5,
+                "load_best_model": False,
                 }
 
+        start_time = time.time()
         class ErnieClassificationModel(ClassificationModel):
             def build(self, **model_config):
                 self.model = ErnieSequenceClassificationCustomized.from_pretrained(**model_config)
@@ -206,7 +190,7 @@ class TestDygraphModels(unittest.TestCase):
                     TestDygraphModels.train_data, TestDygraphModels.eval_data,
                     label_encoder=TestDygraphModels.label_encoder,
                     **run_config)
-        logging.info("ernie best train score: {}".format(best_acc))
+        logging.warning("ernie best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
 
 
 if __name__ == "__main__":
