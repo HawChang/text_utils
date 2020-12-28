@@ -7,21 +7,20 @@ Date  :   20/09/28 14:22:12
 Desc  :   
 """
 
-import jieba
 import json
 import logging
 import os
 import sys
 import time
 
-#_cur_dir = os.path.dirname(os.path.abspath(__file__))
-#sys.path.append("%s/../" % _cur_dir)
-
 from text_utils.utils.data_io import read_from_file
+from text_utils.utils.word_segger import WordSegger
 
 
 class LRTokenizer():
     def __init__(self,
+            seg_method="word_seg",
+            segdict_path="dict/chinese_gbk",
             stopword_path=None,
             encoding="gb18030",
             lowercase=True,
@@ -39,6 +38,8 @@ class LRTokenizer():
              jieba_tmp_dir: str, 结巴分词的临时文件夹地址
         """
         # 保存各配置信息
+        self._seg_method = seg_method
+        self._segdict_path = segdict_path
         self._stopword_path = stopword_path
         self._encoding = encoding
         self._lowercase = lowercase
@@ -47,6 +48,8 @@ class LRTokenizer():
         self._jieba_tmp_dir = jieba_tmp_dir
 
         self.config_dict = {
+                "seg_method": self._seg_method,
+                "segdict_path": self._segdict_path,
                 "stopword_path": self._stopword_path,
                 "encoding": self._encoding,
                 "lowercase": self._lowercase,
@@ -55,15 +58,8 @@ class LRTokenizer():
                 "jieba_tmp_dir": self._jieba_tmp_dir,
                 }
 
-        if jieba_tmp_dir is not None:
-            if os.path.isdir(jieba_tmp_dir):
-                jieba.dt.tmp_dir = jieba_tmp_dir
-            else:
-                os.mkdir(jieba_tmp_dir)
-                logging.error("creat tmp dir for jieba: {}".format(jieba_tmp_dir))
-
         # 加载切词工具和停用词信息
-        #self._segger = WordSegger(self.seg_method, self.segdict_path)
+        self._segger = WordSegger(self._seg_method, self._segdict_path, self._jieba_tmp_dir)
         self._stopwords = set() if stopword_path is None \
                 else set(read_from_file(stopword_path, encoding=encoding))
 
@@ -73,8 +69,7 @@ class LRTokenizer():
         [out] valid_tokens: list[str], 切词结果, unicode编码
         """
         # 得到切词结果 切词结果为字符串迭代器 unicode编码
-        #tokens = self._segger.seg_words(text)
-        tokens = jieba.cut(text)
+        tokens = self._segger.seg_words(text)
         if verbose:
             logging.debug("tar string   : %s" % text.encode("gb18030"))
             logging.debug("seg result   : %s" % "/ ".join(tokens).encode("gb18030"))
@@ -161,11 +156,17 @@ class LRTokenizer():
         logging.info("load config: {}".format(config))
         return cls(**config)
 
+    def destroy(self):
+        """wordsegger销毁
+        """
+        self._segger.destroy()
+
 
 if __name__ == "__main__":
     tokenizer = LRTokenizer(
+            seg_method="word_seg",
             stopword_path="./dict/stopword_shrink.txt",
-            jieba_tmp_dir="./dict/jieba_tmp",
+            #jieba_tmp_dir="./dict/jieba_tmp",
             )
 
     tests = ["测试是否能够正常切词",
