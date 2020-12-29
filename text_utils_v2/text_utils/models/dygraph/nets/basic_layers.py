@@ -9,12 +9,12 @@ Desc  :
 
 import sys
 import collections
+import layer_utils as U
 import logging
 import numpy as np
 import paddle.fluid as F
 import paddle.fluid.dygraph as D
 import paddle.fluid.layers as L
-import paddle.fluid.layers.utils as U
 import six
 
 from functools import partial
