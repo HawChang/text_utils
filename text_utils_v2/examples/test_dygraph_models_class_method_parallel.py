@@ -22,7 +22,8 @@ sys.path.append("%s/../" % _cur_dir)
 from text_utils.models.dygraph.base_model import ClassificationModel
 from text_utils.models.dygraph.base_model import model_parallelized
 from text_utils.models.dygraph.nets.textcnn import TextCNNClassifier
-from text_utils.models.dygraph.nets.gru import GRU
+from text_utils.models.dygraph.nets.gru import GRUClassifier
+from text_utils.models.dygraph.nets.lstm import DynamicLSTMClassifier
 from text_utils.models.dygraph.nets.ernie_for_sequence_classification import ErnieSequenceClassificationCustomized
 from text_utils.tokenizers.ernie_tokenizer import ErnieTokenizer
 from text_utils.utils.data_io import get_attr_values
@@ -156,7 +157,7 @@ class TestDygraphModelsParallelized(unittest.TestCase):
         class GRUModel(ClassificationModel):
             @model_parallelized(TestDygraphModelsParallelized.strategy)
             def build(self, **model_config):
-                self.model = GRU(**model_config)
+                self.model = GRUClassifier(**model_config)
                 self.built = True
 
         place = F.CUDAPlace(D.ParallelEnv().dev_id)
@@ -168,6 +169,44 @@ class TestDygraphModelsParallelized(unittest.TestCase):
                     label_encoder=TestDygraphModelsParallelized.label_encoder,
                     **run_config)
         logging.warning("gru parallelized best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
+
+    def test_lstm_parallelized(self):
+        lstm_config = {
+                "num_class": TestDygraphModelsParallelized.label_encoder.size(),
+                "vocab_size": TestDygraphModelsParallelized.tokenizer.size(),
+                "emb_dim" : 512,
+                "lstm_dim" : 256,
+                "fc_hid_dim": 512,
+                "is_sparse": False,
+                "bi_direction": True,
+                }
+
+        run_config = {
+                "model_save_path": os.path.join(TestDygraphModelsParallelized.test_output_dir, "lstm"),
+                "best_model_save_path": os.path.join(TestDygraphModelsParallelized.test_output_dir, "lstm_best"),
+                "epochs": 2,
+                "batch_size": 32,
+                "max_seq_len": 300,
+                "print_step": 200,
+                "learning_rate": 5e-4,
+                }
+
+        start_time = time.time()
+        class LSTMModel(ClassificationModel):
+            @model_parallelized(TestDygraphModelsParallelized.strategy)
+            def build(self, **model_config):
+                self.model = DynamicLSTMClassifier(**model_config)
+                self.built = True
+
+        place = F.CUDAPlace(D.ParallelEnv().dev_id)
+        with D.guard(place):
+            lstm_model = LSTMModel()
+            lstm_model.build(**lstm_config)
+            best_acc = lstm_model.train(
+                    TestDygraphModelsParallelized.train_data, TestDygraphModelsParallelized.eval_data,
+                    label_encoder=TestDygraphModelsParallelized.label_encoder,
+                    **run_config)
+        logging.warning("lstm parallelized best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
 
     def test_ernie_parallelized(self):
         ernie_config = {
@@ -211,8 +250,9 @@ if __name__ == "__main__":
     # 运行指定测试用例
     # 构造测试集
     suit = unittest.TestSuite()
-    suit.addTest(TestDygraphModelsParallelized("test_textcnn_parallelized"))
+    #suit.addTest(TestDygraphModelsParallelized("test_textcnn_parallelized"))
     #suit.addTest(TestDygraphModelsParallelized("test_gru_parallelized"))
+    suit.addTest(TestDygraphModelsParallelized("test_lstm_parallelized"))
     #suit.addTest(TestDygraphModelsParallelized("test_ernie_parallelized"))
     runner = unittest.TextTestRunner()
     runner.run(suit)

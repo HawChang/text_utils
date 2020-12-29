@@ -11,94 +11,7 @@ import logging
 import paddle.fluid.layers as L
 import paddle.fluid.dygraph as D
 
-
-class ConvPool(D.Layer):
-    """卷积池化层
-    """
-    def __init__(self,
-            num_channels,
-            num_filters,
-            filter_size,
-            padding,
-            use_cudnn=False,
-            ):
-        super(ConvPool, self).__init__()
-
-        self._conv2d = D.Conv2D(
-            num_channels=num_channels,
-            num_filters=num_filters,
-            filter_size=filter_size,
-            padding=padding,
-            use_cudnn=use_cudnn,
-            act='tanh')
-
-    def forward(self, inputs):
-        """前向预测
-        """
-        # inputs shape = [batch_size, num_channels, seq_len, emb_dim] [N, C, H, W]
-        #print("inputs shape: {}".format(inputs.shape))
-
-        # x shape = [batch_size, num_filters, height_after_conv, width_after_conv=1]
-        x = self._conv2d(inputs)
-        #print("conv3d shape: {}".format(x.shape))
-
-        # x shape = [batch_size, num_filters, height_after_pool=1, width_after_pool=1]
-        x = L.reduce_max(x, dim=2, keep_dim=True)
-        #print("reduce sum shape: {}".format(x.shape))
-
-        # x shape = [batch_size, num_filters]
-        x = L.squeeze(x, axes=[2, 3])
-        return x
-
-
-class TextCNN(D.Layer):
-    """textcnn层
-    """
-    def __init__(self,
-            emb_dim,
-            num_filters=10,
-            num_channels=1,
-            win_size_list=None,
-            use_cudnn=True,
-            ):
-        super(TextCNN, self).__init__()
-
-        #logging.info("emb_dim       = {}".format(emb_dim))
-        #logging.info("num filters   = {}".format(num_filters))
-        #logging.info("num channels  = {}".format(num_channels))
-        #logging.info("win size list = {}".format(win_size_list))
-        #logging.info("is sparse     = {}".format(is_sparse))
-        #logging.info("use cudnn     = {}".format(use_cudnn))
-
-        if win_size_list is None:
-            win_size_list = [3]
-
-        def gen_conv_pool(win_size):
-            """生成指定窗口的卷积池化层
-            """
-            return ConvPool(
-                    num_channels,
-                    num_filters,
-                    [win_size, emb_dim],
-                    padding=[1, 0],
-                    use_cudnn=use_cudnn,
-                    )
-
-        self.conv_pool_list = D.LayerList([gen_conv_pool(win_size) for win_size in win_size_list])
-
-
-    def forward(self, input_emb):
-        """前向预测
-        """
-        # emb shape = [batch_size, 1, seq_len, emb_dim]
-        emb = L.unsqueeze(input_emb, axes=[1])
-        #print("emb shape: {}".format(emb.shape))
-
-        conv_pool_res_list = [conv_pool(emb) for conv_pool in self.conv_pool_list]
-
-        conv_pool_res = L.concat(conv_pool_res_list, axis=-1)
-
-        return conv_pool_res
+from basic_layers import TextCNNLayer, EmbeddingLayer
 
 
 class TextCNNClassifier(D.Layer):
@@ -117,13 +30,14 @@ class TextCNNClassifier(D.Layer):
             ):
         super(TextCNNClassifier, self).__init__()
 
-        self.embedding = D.Embedding(
-            size=[vocab_size, emb_dim],
+        self.embedding = EmbeddingLayer(
+            vocab_size=vocab_size,
+            emb_dim=emb_dim,
             dtype='float32',
             is_sparse=is_sparse,
             )
 
-        self.textcnn = TextCNN(
+        self.textcnn = TextCNNLayer(
             emb_dim,
             num_filters,
             num_channels,

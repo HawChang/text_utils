@@ -1,42 +1,43 @@
 #!/usr/bin/env python
 # -*- coding:gb18030 -*-
 """
-File  :   gru.py
+File  :   lstm.py
 Author:   zhanghao55@baidu.com
-Date  :   20/08/26 16:27:01
+Date  :   20/12/29 15:12:05
 Desc  :   
 """
 
 import logging
 import numpy as np
-#import paddle.fluid as F
 import paddle.fluid.layers as L
 import paddle.fluid.dygraph as D
 
-from basic_layers import DynamicGRULayer, EmbeddingLayer
+from basic_layers import DynamicLSTMLayer, EmbeddingLayer
 
 
-class GRUClassifier(D.Layer):
-    """GRU分类模型
+class DynamicLSTMClassifier(D.Layer):
+    """LSTM分类模型
     """
     def __init__(self,
             num_class,
             vocab_size,
             emb_dim=128,
-            gru_dim=256,
+            lstm_dim=256,
             fc_hid_dim=256,
             is_sparse=True,
             bi_direction=True,
+            dropout_prob=0.1,
             ):
-        super(GRUClassifier, self).__init__()
+        super(DynamicLSTMClassifier, self).__init__()
 
         logging.info("num_class    = {}".format(num_class))
         logging.info("vocab_size   = {}".format(vocab_size))
         logging.info("emb_dim      = {}".format(emb_dim))
-        logging.info("gru_dim      = {}".format(gru_dim))
+        logging.info("lstm_dim      = {}".format(lstm_dim))
         logging.info("fc_hid_dim   = {}".format(fc_hid_dim))
         logging.info("is_sparse    = {}".format(is_sparse))
         logging.info("bi_direction = {}".format(bi_direction))
+        logging.info("dropout_prob = {}".format(dropout_prob))
 
         self.bi_direction = bi_direction
 
@@ -44,42 +45,50 @@ class GRUClassifier(D.Layer):
             vocab_size=vocab_size,
             emb_dim=emb_dim,
             dtype='float32',
-            #param_attr=F.ParamAttr(learning_rate=30),
             is_sparse=is_sparse)
 
-        self._hid_fc1 = D.Linear(input_dim=emb_dim, output_dim=gru_dim * 3)
-
-        self._gru_forward = DynamicGRULayer(size=gru_dim, h_0=None, is_reverse=False)
+        self._lstm_forward = DynamicLSTMLayer(input_size=emb_dim, hidden_size=lstm_dim, is_reverse=False)
 
         if bi_direction:
-            self._gru_backward = DynamicGRULayer(size=gru_dim, h_0=None, is_reverse=True)
-            self._hid_fc2 = D.Linear(input_dim=gru_dim * 2, output_dim=fc_hid_dim, act="tanh")
+            self._lstm_backward = DynamicLSTMLayer(input_size=emb_dim, hidden_size=lstm_dim, is_reverse=True)
+            self._hid_fc2 = D.Linear(input_dim=lstm_dim * 2, output_dim=fc_hid_dim, act="tanh")
         else:
-            self._hid_fc2 = D.Linear(input_dim=gru_dim, output_dim=fc_hid_dim, act="tanh")
+            self._hid_fc2 = D.Linear(input_dim=lstm_dim, output_dim=fc_hid_dim, act="tanh")
 
         self._output_fc = D.Linear(input_dim=fc_hid_dim, output_dim=num_class, act=None)
+
+        self.dropout = lambda i: L.dropout(i,
+                dropout_prob=dropout_prob,
+                dropout_implementation="upscale_in_train") if self.training else i
 
     def forward(self, inputs, labels=None, logits_softmax=False):
         """前向预测
         """
+        #logging.info("inputs shape: {}".format(inputs.shape))
         emb = self.embedding(inputs)
+        #logging.info("emb shape: {}".format(emb.shape))
 
-        hid_fc1 = self._hid_fc1(emb)
+        emb_dropout = self.dropout(emb)
 
-        gru_forward = self._gru_forward(hid_fc1)
-        gru_forward_tanh = L.tanh(gru_forward)
+        lstm_forward, _ = self._lstm_forward(emb_dropout)
+        #logging.info("lstm_forward shape: {}".format(lstm_forward.shape))
+        lstm_forward_tanh = L.tanh(lstm_forward)
         if self.bi_direction:
-            gru_backward = self._gru_backward(hid_fc1)
-            gru_backward_tanh = L.tanh(gru_backward)
+            lstm_backward, _ = self._lstm_backward(emb_dropout)
+            lstm_backward_tanh = L.tanh(lstm_backward)
             encoded_vector = L.concat(
-                input=[gru_forward_tanh, gru_backward_tanh], axis=2)
+                input=[lstm_forward_tanh, lstm_backward_tanh], axis=-1)
             encoded_vector = L.reduce_max(encoded_vector, dim=1)
         else:
-            encoded_vector = L.reduce_max(gru_forward_tanh, dim=1)
+            encoded_vector = L.reduce_max(lstm_forward_tanh, dim=1)
+
+        #logging.info("encoded_vector shape: {}".format(encoded_vector.shape))
 
         hid_fc_2 = self._hid_fc2(encoded_vector)
+        #logging.info("hid_fc_2 shape: {}".format(hid_fc_2.shape))
 
         logits = self._output_fc(hid_fc_2)
+        #logging.info("logits shape: {}".format(logits.shape))
 
         # 输出logits为softmax后的结果
         if logits_softmax:

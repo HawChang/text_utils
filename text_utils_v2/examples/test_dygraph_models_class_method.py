@@ -22,7 +22,8 @@ _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../" % _cur_dir)
 from text_utils.models.dygraph.base_model import ClassificationModel
 from text_utils.models.dygraph.nets.ernie_for_sequence_classification import ErnieSequenceClassificationCustomized
-from text_utils.models.dygraph.nets.gru import GRU
+from text_utils.models.dygraph.nets.gru import GRUClassifier
+from text_utils.models.dygraph.nets.lstm import DynamicLSTMClassifier
 from text_utils.models.dygraph.nets.textcnn import TextCNNClassifier
 from text_utils.tokenizers.ernie_tokenizer import ErnieTokenizer
 from text_utils.utils.data_io import get_attr_values
@@ -148,7 +149,7 @@ class TestDygraphModels(unittest.TestCase):
         start_time = time.time()
         class GRUModel(ClassificationModel):
             def build(self, **model_config):
-                self.model = GRU(**model_config)
+                self.model = GRUClassifier(**model_config)
                 self.built = True
 
         with D.guard():
@@ -159,6 +160,43 @@ class TestDygraphModels(unittest.TestCase):
                     label_encoder=TestDygraphModels.label_encoder,
                     **run_config)
         logging.warning("gru best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
+
+    def test_lstm(self):
+        lstm_config = {
+                "num_class": TestDygraphModels.label_encoder.size(),
+                "vocab_size": TestDygraphModels.tokenizer.size(),
+                "emb_dim" : 512,
+                "lstm_dim" : 256,
+                "fc_hid_dim": 512,
+                "is_sparse": True,
+                "bi_direction": True,
+                }
+
+        run_config = {
+                "model_save_path": os.path.join(TestDygraphModels.test_output_dir, "lstm"),
+                "best_model_save_path": os.path.join(TestDygraphModels.test_output_dir, "lstm_best"),
+                "epochs": 2,
+                "batch_size": 32,
+                "max_seq_len": 300,
+                "print_step": 200,
+                "learning_rate": 5e-4,
+                "load_best_model": False,
+                }
+
+        start_time = time.time()
+        class LSTMModel(ClassificationModel):
+            def build(self, **model_config):
+                self.model = DynamicLSTMClassifier(**model_config)
+                self.built = True
+
+        with D.guard():
+            lstm_model = LSTMModel()
+            lstm_model.build(**lstm_config)
+            best_acc = lstm_model.train(
+                    TestDygraphModels.train_data, TestDygraphModels.eval_data,
+                    label_encoder=TestDygraphModels.label_encoder,
+                    **run_config)
+        logging.warning("lstm best train score: {}, cost time: {}s".format(best_acc, time.time()- start_time))
 
     def test_ernie(self):
         ernie_config = {
@@ -200,9 +238,10 @@ if __name__ == "__main__":
     # 运行指定测试用例
     # 构造测试集
     suit = unittest.TestSuite()
-    suit.addTest(TestDygraphModels("test_textcnn"))
-    suit.addTest(TestDygraphModels("test_gru"))
-    suit.addTest(TestDygraphModels("test_ernie"))
+    #suit.addTest(TestDygraphModels("test_textcnn"))
+    #suit.addTest(TestDygraphModels("test_gru"))
+    suit.addTest(TestDygraphModels("test_lstm"))
+    #suit.addTest(TestDygraphModels("test_ernie"))
     runner = unittest.TextTestRunner()
     runner.run(suit)
 
