@@ -1,0 +1,15 @@
+1	news_story
+2	news_culture
+3	news_entertainment
+4	news_sports
+5	news_finance
+6	news_house
+7	news_car
+8	news_edu
+9	news_tech
+10	news_military
+11	news_travel
+12	news_world
+13	stock
+14	news_agriculture
+15	news_game
