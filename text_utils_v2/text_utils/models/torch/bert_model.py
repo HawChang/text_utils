@@ -1,3 +1,4 @@
+import json
 import logging
 import math
 import os
@@ -20,10 +21,9 @@ def mish(x):
 ACT2FN = {"gelu": gelu, "relu": torch.nn.functional.relu, "swish": swish, "mish": mish}
 
 class BertConfig(object):
-    
     def __init__(
         self,
-        vocab_size,
+        vocab_size=None,
         hidden_size=768,
         num_hidden_layers=12,
         num_attention_heads=12,
@@ -35,7 +35,10 @@ class BertConfig(object):
         type_vocab_size=2,
         initializer_range=0.02,
         layer_norm_eps=1e-12,
+        **kwargs
     ):
+        logging.info("vocab_size: {}".format(vocab_size))
+        logging.info("kwargs: {}".format(kwargs))
 
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
@@ -330,6 +333,7 @@ class BertPredictionHeadTransform(nn.Module):
 class BertLMPredictionHead(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
         super().__init__()
+        config = BertConfig(**config)
         self.transform = BertPredictionHeadTransform(config)
 
         # The output weights are the same as the input embeddings, but there is
@@ -385,16 +389,68 @@ class BertPreTrainedModel(nn.Module):
         a simple interface for downloading and loading pretrained models.
     """
 
-    def __init__(self, config, *inputs, **kwargs):
-        super(BertPreTrainedModel, self).__init__()
-        if not isinstance(config, BertConfig):
-            raise ValueError(
-                "Parameter config in `{}(config)` should be an instance of class `BertConfig`. "
-                "To create a model from a Google pretrained model use "
-                "`model = {}.from_pretrained(PRETRAINED_MODEL_NAME)`".format(
-                    self.__class__.__name__, self.__class__.__name__
-                ))
-        self.config = config
+    @classmethod
+    def from_pretrained(cls, pretrained_model_path, keep_tokens=None, **kwargs):
+        assert "vocab_size" in kwargs, \
+                "parameter 'vocab_size' is required when load bert"
+
+        bert_state_dict_path = os.path.join(pretrained_model_path,
+                "bert-base-chinese-pytorch_model.bin")
+        assert os.path.exists(bert_state_dict_path), \
+                "cannot find state dict file: {}".format(bert_state_dict_path)
+
+        bert_config_path = os.path.join(pretrained_model_path, 'bert_config.json')
+        assert os.path.exists(bert_config_path), \
+                "cannot find bert config file: {}".format(bert_config_path)
+
+        with open(bert_config_path) as rf:
+            bert_config_dict = dict(json.loads(rf.read()), **kwargs)
+            logging.info("bert_config_dict: {}".format(bert_config_dict))
+        model = cls(bert_config_dict)
+
+        pretrained_state_dict = torch.load(bert_state_dict_path)
+
+        # 去除pooler和非bert相关的权重
+        pretrained_state_dict = {k: v for k, v in pretrained_state_dict.items() \
+                if k[:4] == "bert" and "pooler" not in k}
+
+        logging.info("remove state dict: {}".format(
+            [k for k in pretrained_state_dict.keys() \
+                    if k[:4] != "bert" or "pooler" in k]))
+
+        # 预训练数据有的权值
+        pretrained_state_dict_name_set = pretrained_state_dict.keys()
+        # 模型需要的权重
+        model_state_dict_name_set = model.state_dict().keys()
+
+        logging.info("unused weight in pretrained file: {}".format(
+            pretrained_state_dict_name_set - model_state_dict_name_set))
+        logging.info("missing weight in pretrained file: {}".format(
+            model_state_dict_name_set - pretrained_state_dict_name_set))
+
+        if keep_tokens is not None:
+            ## 说明精简词表了，embeedding层也要过滤下
+            embedding_weight_name = "bert.embeddings.word_embeddings.weight"
+
+            pretrained_state_dict[embedding_weight_name] = \
+                    pretrained_state_dict[embedding_weight_name][keep_tokens]
+
+        model.load_state_dict(pretrained_state_dict, strict=False)
+        torch.cuda.empty_cache()
+        logging.info("succeed loading model from {}".format(pretrained_model_path))
+
+        return model
+
+    #def __init__(self, config, *inputs, **kwargs):
+    #    super(BertPreTrainedModel, self).__init__()
+    #    if not isinstance(config, BertConfig):
+    #        raise ValueError(
+    #            "Parameter config in `{}(config)` should be an instance of class `BertConfig`. "
+    #            "To create a model from a Google pretrained model use "
+    #            "`model = {}.from_pretrained(PRETRAINED_MODEL_NAME)`".format(
+    #                self.__class__.__name__, self.__class__.__name__
+    #            ))
+    #    self.config = config
 
     def init_bert_weights(self, module):
         """ Initialize the weights.
@@ -426,11 +482,11 @@ class BertModel(BertPreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.config = config
+        self.config = BertConfig(**config)
 
-        self.embeddings = BertEmbeddings(config)
-        self.encoder = BertEncoder(config)
-        self.pooler = BertPooler(config)
+        self.embeddings = BertEmbeddings(self.config)
+        self.encoder = BertEncoder(self.config)
+        self.pooler = BertPooler(self.config)
 
         self.apply(self.init_bert_weights)
 

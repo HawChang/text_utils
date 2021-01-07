@@ -6,34 +6,23 @@ import torch.nn.functional as F
 from text_utils.tokenizers.bert_tokenizer import Tokenizer
 import time
 from text_utils.models.torch.config import yayun_list
+from text_utils.models.torch.bert_model import BertConfig, BertModel, BertLMPredictionHead
 import os 
 
 
-class Seq2SeqModel(nn.Module):
+class Seq2SeqNet(nn.Module):
     """
     """
-    def __init__(self, word2ix, model_name="roberta"):
-        super(Seq2SeqModel, self).__init__()
-        self.word2ix = word2ix
-        self.tokenizer = Tokenizer(word2ix)
-        config = ""
-        if model_name == "roberta":
-            #from bert_seq2seq.model.roberta_model import BertModel, BertConfig, BertLMPredictionHead
-            #config = BertConfig(len(word2ix))
-            #self.bert = BertModel(config)
-            #self.decoder = BertLMPredictionHead(config, self.bert.embeddings.word_embeddings.weight)
-            pass
-        elif model_name == "bert":
-            from text_utils.models.torch.bert_model import BertConfig, BertModel, BertLMPredictionHead
-            config = BertConfig(len(word2ix))
-            self.bert = BertModel(config)
-            self.decoder = BertLMPredictionHead(config, self.bert.embeddings.word_embeddings.weight)
-        else :
-            raise Exception("model_name_err")
+    def __init__(self, config):
+        super(Seq2SeqNet, self).__init__()
 
-        self.hidden_dim = config.hidden_size
-        self.vocab_size = len(word2ix)
-
+        assert "tokenizer" in config, "tokenizer is required to init Seq2SeqNet"
+        self.tokenizer = config["tokenizer"]
+        self.word2ix = self.tokenizer._token_dict
+        self.vocab_size = len(self.word2ix)
+        #self.word2ix = word2ix
+        #self.vocab_size = len(word2ix)
+        #self.tokenizer = Tokenizer(word2ix)
 
     def compute_loss(self, predictions, labels, target_mask):
         """
@@ -45,36 +34,10 @@ class Seq2SeqModel(nn.Module):
         loss = nn.CrossEntropyLoss(ignore_index=0, reduction="none")
         return (loss(predictions, labels) * target_mask).sum() / target_mask.sum() ## 通过mask 取消 pad 和句子a部分预测的影响
 
-    def forward(self, input_tensor, token_type_id, position_enc=None, labels=None, device="cpu"):
-        ## 传入输入，位置编码，token type id ，还有句子a 和句子b的长度，注意都是传入一个batch数据
-        ##  传入的几个值，在seq2seq 的batch iter 函数里面都可以返回
-        input_shape = input_tensor.shape
-        batch_size = input_shape[0]
-        seq_len = input_shape[1]
-        ## 构建特殊的mask
-        ones = torch.ones((1, 1, seq_len, seq_len), dtype=torch.float32, device=device)
-        a_mask = ones.tril() # 下三角矩阵
-        s_ex12 = token_type_id.unsqueeze(1).unsqueeze(2).float()
-        s_ex13 = token_type_id.unsqueeze(1).unsqueeze(3).float()
-        a_mask = (1.0 - s_ex12) * (1.0 - s_ex13) + s_ex13 * a_mask 
-            
-        enc_layers, _ = self.bert(input_tensor, position_ids=position_enc, token_type_ids=token_type_id, attention_mask=a_mask, 
-                                    output_all_encoded_layers=True)
-        squence_out = enc_layers[-1] ## 取出来最后一层输出
+    #def forward(self, input_tensor, token_type_id, position_enc=None, labels=None, device="cpu"):
+    def forward(self, *args, **kwargs):
+        raise NotImplementedError
 
-        predictions = self.decoder(squence_out)
-
-        if labels is not None:
-            ## 计算loss
-            ## 需要构建特殊的输出mask 才能计算正确的loss
-            # 预测的值不用取最后sep符号的结果 因此是到-1
-            predictions = predictions[:, :-1].contiguous()
-            target_mask = token_type_id[:, 1:].contiguous()
-            loss = self.compute_loss(predictions, labels, target_mask)
-            return predictions, loss 
-        else :
-            return predictions
-    
     def generate(self, text, out_max_length=40, beam_size=1, device="cpu", is_poem=False, max_length=256):
         # 对 一个 句子生成相应的结果
         ## 通过输出最大长度得到输入的最大长度，这里问题不大，如果超过最大长度会进行截断
@@ -85,17 +48,17 @@ class Seq2SeqModel(nn.Module):
         token_ids = torch.tensor(token_ids, device=device).view(1, -1)
         token_type_ids = torch.tensor(token_type_ids, device=device).view(1, -1)
         if is_poem:## 古诗的beam-search稍有不同
-            
+
             out_puts_ids = self.beam_search_poem(text, token_ids, token_type_ids, self.word2ix, beam_size=beam_size, device=device)
-        else :   
+        else:
             out_puts_ids = self.beam_search(token_ids, token_type_ids, self.word2ix, beam_size=beam_size, device=device)
-        
+
         # 解码 得到相应输出
         # if err is False:
         #     return self.tokenizer.decode(out_puts_ids)
-        
+
         return self.tokenizer.decode(out_puts_ids.cpu().numpy())
-    
+
     # def poem_beam_search(self, token_ids, token_type_ids, word2ix, beam_size=1, device="cpu"):
     #     """
     #     专门针对写诗的beam-search
@@ -164,7 +127,7 @@ class Seq2SeqModel(nn.Module):
     #                         yayun_save = i
     #                         break
     #             if i_2 == juhao_id and len(last_chars) != 0:
-                    
+
     #                 word = ix2word[last_chars[i_1]]
     #                 # 找押韵 给奖励
     #                 if word in yayun_list[yayun_save]:
@@ -218,11 +181,11 @@ class Seq2SeqModel(nn.Module):
         beam-search操作
         """
         sep_id = word2ix["[SEP]"]
-        
+
         # 用来保存输出序列
         output_ids = torch.empty(1, 0, device=device, dtype=torch.long)
         # 用来保存累计得分
-      
+
         with torch.no_grad(): 
             output_scores = torch.zeros(token_ids.shape[0], device=device)
             for step in range(self.out_max_length):
@@ -233,9 +196,9 @@ class Seq2SeqModel(nn.Module):
                     token_type_ids = token_type_ids.view(1, -1).repeat(beam_size, 1)
                 else:
                     scores = self.forward(new_input_ids, new_token_type_ids, device=device)
-                
+
                 logit_score = torch.log_softmax(scores[:, -1], dim=-1)
-                
+
                 logit_score = output_scores.view(-1, 1) + logit_score # 累计得分
                 ## 取topk的时候我们是展平了然后再去调用topk函数
                 # 展平
@@ -243,7 +206,7 @@ class Seq2SeqModel(nn.Module):
                 hype_score, hype_pos = torch.topk(logit_score, beam_size)
                 indice1 = (hype_pos // scores.shape[-1]) # 行索引
                 indice2 = (hype_pos % scores.shape[-1]).long().reshape(-1, 1) # 列索引
-               
+
                 # 更新得分
                 output_scores = hype_score
                 output_ids = torch.cat([output_ids[indice1], indice2], dim=1).long()
@@ -267,7 +230,7 @@ class Seq2SeqModel(nn.Module):
                         output_scores = output_scores[flag]  # 扔掉已完成序列
                         end_counts = end_counts[flag]  # 扔掉已完成end计数
                         beam_size = flag.sum()  # topk相应变化
-    
+
             return output_ids[output_scores.argmax()]
 
     def beam_search_poem(self, text, token_ids, token_type_ids, word2ix, beam_size=1, device="cpu"):
@@ -306,12 +269,12 @@ class Seq2SeqModel(nn.Module):
                     token_type_ids = token_type_ids.view(1, -1).repeat(beam_size, 1)
                 else:
                     scores = self.forward(new_input_ids, new_token_type_ids, device=device)
-                
+
                 logit_score = torch.log_softmax(scores[:, -1], dim=-1)
-                
+
                 if last_chars is not None:
                     for i, char in enumerate(last_chars):
-                        
+
                         for word in repeat_word[i]:
                             logit_score[i, word] -= 5
                         for word in title:
@@ -405,14 +368,14 @@ class Seq2SeqModel(nn.Module):
                         for index, i in enumerate(flag):
                             if i.item() == 1:
                                 new_repeat_word.append(repeat_word[index])
-                     
+
                         repeat_word = new_repeat_word
 
 
             # print(repeat_word)
             # print(yayun_chars)
             return output_ids[output_scores.argmax()]
-    
+
     def beam_search_poem_v2(self, text, token_ids, token_type_ids, word2ix, beam_size=1, device="cpu"):
         """
         beam-search操作
@@ -446,7 +409,7 @@ class Seq2SeqModel(nn.Module):
                     token_type_ids = token_type_ids.view(1, -1).repeat(beam_size, 1)
                 else:
                     scores = self.forward(new_input_ids, new_token_type_ids, device=device)
-                
+
                 logit_score = torch.log_softmax(scores[:, -1], dim=-1)
                 # if len(last_chars) != 0:
                 #     logit_score[last_chars] -= 5
@@ -472,18 +435,18 @@ class Seq2SeqModel(nn.Module):
                 hype_score, hype_pos = torch.topk(logit_score, beam_size)
                 indice1 = (hype_pos // scores.shape[-1]) # 行索引
                 indice2 = (hype_pos % scores.shape[-1]).long().reshape(-1, 1) # 列索引
-                
+
                 for index, each_out in zip(indice1, indice2):
                     index = index.item()
                     each_out = each_out.item()
-                    
+
                     if each_out in repeat_word:
                         pass 
                         # repeat_word[index].append(each_out)
                         # hype_score[index] -= 2 * repeat_word[index].count(each_out)
                     else :
                         repeat_word.append(each_out)
-                    
+
                     if start < beam_size and each_out == douhao_id and len(last_chars) != 0:
                         start += 1
                         word = ix2word[last_chars[index].item()]# 找到上一个字符 记住其押韵情况
@@ -491,7 +454,7 @@ class Seq2SeqModel(nn.Module):
                             if word in each_yayun:
                                 yayun_chars[index] = i
                                 break
-                        
+
                     # if each_out == juhao_id and len(last_chars) != 0:  
                     #     word = ix2word[last_chars[index].item()]
                     #     if yayun_chars[index].item() != -1 and word in yayun_list[yayun_chars[index].item()]:
@@ -537,6 +500,37 @@ class Seq2SeqModel(nn.Module):
             return output_ids[output_scores.argmax()]
 
 
+class BertSeq2seqNet(BertModel, Seq2SeqNet):
+    def __init__(self, cfg):
+        super(BertSeq2seqNet, self).__init__(cfg)
+        self.decoder = BertLMPredictionHead(cfg, self.embeddings.word_embeddings.weight)
 
-        
-       
+    def forward(self, input_tensor, token_type_id, position_enc=None, labels=None, device="cpu"):
+        ## 传入输入，位置编码，token type id ，还有句子a 和句子b的长度，注意都是传入一个batch数据
+        ##  传入的几个值，在seq2seq 的batch iter 函数里面都可以返回
+        input_shape = input_tensor.shape
+        batch_size = input_shape[0]
+        seq_len = input_shape[1]
+        ## 构建特殊的mask
+        ones = torch.ones((1, 1, seq_len, seq_len), dtype=torch.float32, device=device)
+        a_mask = ones.tril() # 下三角矩阵
+        s_ex12 = token_type_id.unsqueeze(1).unsqueeze(2).float()
+        s_ex13 = token_type_id.unsqueeze(1).unsqueeze(3).float()
+        a_mask = (1.0 - s_ex12) * (1.0 - s_ex13) + s_ex13 * a_mask 
+
+        enc_layers, _ = self.bert(input_tensor, position_ids=position_enc, token_type_ids=token_type_id, attention_mask=a_mask, 
+                                    output_all_encoded_layers=True)
+        squence_out = enc_layers[-1] ## 取出来最后一层输出
+
+        predictions = self.decoder(squence_out)
+
+        if labels is not None:
+            ## 计算loss
+            ## 需要构建特殊的输出mask 才能计算正确的loss
+            # 预测的值不用取最后sep符号的结果 因此是到-1
+            predictions = predictions[:, :-1].contiguous()
+            target_mask = token_type_id[:, 1:].contiguous()
+            loss = self.compute_loss(predictions, labels, target_mask)
+            return predictions, loss 
+        else :
+            return predictions

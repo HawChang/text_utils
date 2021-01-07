@@ -13,6 +13,7 @@ _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../../" % _cur_dir)
 from text_utils.utils.data_io import get_file_name_list, write_to_file, get_data
 from text_utils.models.torch.base_model import BertSeq2seqModel, model_distributed
+from text_utils.models.torch.seq2seq_model import BertSeq2seqNet
 
 ## 自动写诗的例子
 import logging
@@ -24,7 +25,7 @@ import time
 import unittest
 from torch.utils.data import Dataset, DataLoader
 from text_utils.tokenizers.bert_tokenizer import Tokenizer, load_chinese_base_vocab
-from text_utils.models.torch.utils import load_bert, load_model_params
+#from text_utils.models.torch.utils import load_bert, load_model_params
 from text_utils.utils.logger import init_log
 
 init_log(stream_level=logging.INFO)
@@ -190,6 +191,7 @@ class TestSeq2seq(unittest.TestCase):
 
         model_name = "bert" # 选择模型名字
         model_path = "./state_dict/bert_base_chinese/bert-base-chinese-pytorch_model.bin" # roberta模型位置
+        model_dir = "./state_dict/bert_base_chinese/" # bert模型目录
         #recent_model_path = "./output/bert_model_poem.bin" # 用于把已经训练好的模型继续训练
         #model_save_path = "./output/bert_model_poem.bin"
 
@@ -201,31 +203,28 @@ class TestSeq2seq(unittest.TestCase):
                 "learning_rate": 5e-5,
                 "load_best_model": True,
                 }
+        tokenizer = Tokenizer(TestSeq2seq.word2idx)
 
         class BertPoemModel(BertSeq2seqModel):
-            def init_model(self, word2idx, model_name, model_path):
-                bert_model = load_bert(word2idx, model_name=model_name)
+            def init_model(self, model_dir):
+                bert_model = BertSeq2seqNet.from_pretrained(
+                        model_dir,
+                        tokenizer=tokenizer,
+                        vocab_size=len(TestSeq2seq.word2idx),
+                        keep_tokens=TestSeq2seq.keep_tokens)
+                #load_bert(word2idx, model_name=model_name)
                 # 加载预训练的模型参数
-                load_model_params(bert_model, model_path, keep_tokens=TestSeq2seq.keep_tokens)
+                #load_model_params(bert_model, model_path, keep_tokens=TestSeq2seq.keep_tokens)
                 return bert_model
 
-        model = BertPoemModel(TestSeq2seq.word2idx, model_name, model_path)
+        model = BertPoemModel(model_dir)
         logging.info("device : {}".format(model.device))
         best_loss = model.train(TestSeq2seq.dataloader, TestSeq2seq.dataloader, **run_config)
 
         logging.info("best_loss = {}.".format(best_loss))
 
-    #def gen_poem(self, model):
-    #    model.eval()
-    #    test_data = ["北国风光##五言绝句", "题西林壁##七言绝句", "长安早春##五言律诗"]
-    #    for text in test_data:
-    #        logging.debug(text)
-    #        logging.debug(model.generate(text, beam_size=3,device=TestSeq2seq.device, is_poem=True))
-    #    model.train()
-
 
 if __name__ == '__main__':
-    #process_origin_poetry("../dataset/poetry/", "../dataset/poetry_processed", overwrite=False)
     # 运行所有测试用例
     #unittest.main()
 
