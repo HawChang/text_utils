@@ -48,6 +48,16 @@ def load_model_params(model, pretrain_model_path, keep_tokens=None):
         # checkpoint = {k[5:]: v for k, v in checkpoint.items()
         checkpoint = {k: v for k, v in checkpoint.items()
                                             if k[:4] == "bert" and "pooler" not in k}
+        # 预训练数据有的权值
+        pretrained_state_dict_name_set = checkpoint.keys()
+        # 模型需要的权重
+        model_state_dict_name_set = model.state_dict().keys()
+
+        logging.info("unused weight in pretrained file: {}".format(
+            pretrained_state_dict_name_set - model_state_dict_name_set))
+        logging.info("missing weight in pretrained file: {}".format(
+            model_state_dict_name_set - pretrained_state_dict_name_set))
+
         if keep_tokens is not None:
             ## 说明精简词表了，embeedding层也要过滤下
             embedding_weight_name = "bert.embeddings.word_embeddings.weight"
