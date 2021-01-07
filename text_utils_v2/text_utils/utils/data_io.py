@@ -54,7 +54,8 @@ def get_file_name_list(data_path, verbose=False):
     path_stack.append(data_path)
     while len(path_stack) != 0:
         cur_path = path_stack.pop()
-        logging.debug("check data path: %s." % cur_path)
+        if verbose:
+            logging.debug("check data path: %s." % cur_path)
         # 首先检查原始数据是文件还是文件夹
         if os.path.isdir(cur_path):
             #logging.debug("data path is directory.")
@@ -72,9 +73,10 @@ def get_file_name_list(data_path, verbose=False):
         else:
             raise TypeError("unknown type of data path : %s" % cur_path)
 
-    logging.info("file list top 20:")
-    for index, file_name in enumerate(file_list[:20]):
-        logging.info("#%d: %s" % (index + 1, file_name))
+    if verbose:
+        logging.info("file list top 20:")
+        for index, file_name in enumerate(file_list[:20]):
+            logging.info("#%d: %s" % (index + 1, file_name))
     return file_list
 
 
