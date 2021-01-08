@@ -78,7 +78,9 @@ class BaseModel(object):
         if os.path.exists(model_path):
             logging.info("load model from {}".format(model_path))
             start_time = time.time()
-            state_dict = torch.load(model_path)
+            # 在cpu上加载数据 然后加载到模型
+            # 不然在分布式训练时 各卡都会在cuda:0上加载一次数据
+            state_dict = torch.load(model_path, map_location=torch.device('cpu'))
             logging.debug("state_dict_names: {}".format(state_dict.keys()))
             self.get_model().load_state_dict(state_dict, strict=strict)
             torch.cuda.empty_cache()
@@ -277,9 +279,8 @@ class BaseModel(object):
 
 class Seq2seqModel(BaseModel):
     def __init__(self, *args, **kwargs):
-        self.tokenizer = kwargs.pop("tokenizer")
+        self.tokenizer = kwargs["tokenizer"]
         super(Seq2seqModel, self).__init__(*args, **kwargs)
-        self.word2ix = self.tokenizer._token_dict
 
     def generate(self, text, out_max_length=40, beam_size=1, device="cpu", is_poem=False, max_length=256):
         # 对 一个 句子生成相应的结果
@@ -294,14 +295,25 @@ class Seq2seqModel(BaseModel):
         token_type_ids = torch.tensor(token_type_ids, device=device).view(1, -1)
         if is_poem:## 古诗的beam-search稍有不同
             logging.debug("poem beam_search")
-            out_puts_ids = self.beam_search_poem(text, token_ids, token_type_ids, self.word2ix, beam_size=beam_size, device=device)
+            out_puts_ids = self.beam_search_poem(
+                    text,
+                    token_ids,
+                    token_type_ids,
+                    self.tokenizer._token_sep_id,
+                    beam_size=beam_size,
+                    device=device)
         else:
             logging.debug("common beam_search")
-            out_puts_ids = self.beam_search(token_ids, token_type_ids, self.word2ix, beam_size=beam_size, device=device)
+            out_puts_ids = self.beam_search(
+                    token_ids,
+                    token_type_ids,
+                    self.tokenizer._token_sep_id,
+                    beam_size=beam_size,
+                    device=device)
 
         return self.tokenizer.decode(out_puts_ids.cpu().numpy())
 
-    def beam_search(self, token_ids, token_type_ids, word2ix, beam_size=1, device="cpu"):
+    def beam_search(self, token_ids, token_type_ids, stop_id, beam_size=1, device="cpu"):
         """
         beam-search操作
         """
@@ -316,7 +328,7 @@ class Seq2seqModel(BaseModel):
         logging.debug("token_type_ids : {}".format(token_type_ids))
         logging.debug("token_type_ids  shape: {}".format(token_type_ids.shape))
 
-        sep_id = word2ix["[SEP]"]
+        #sep_id = word2ix["[SEP]"]
 
         # 用来保存输出序列
         output_ids = torch.empty(1, 0, device=device, dtype=torch.long)
@@ -398,7 +410,7 @@ class Seq2seqModel(BaseModel):
                 logging.debug("new_token_type_ids shape: {}".format(new_token_type_ids.shape))
 
                 # 记录当前output_ids中有sep_id的情况
-                end_counts = (output_ids == sep_id).sum(1)  # 统计出现的end标记
+                end_counts = (output_ids == stop_id).sum(1)  # 统计出现的end标记
                 best_one = output_scores.argmax()
                 if end_counts[best_one] == 1:
                     # 如果当前分数最优的已结束 则选当前该beam
@@ -445,15 +457,18 @@ class BertSeq2seqModel(Seq2seqModel):
         cur_eval_step = 0
         start_time = time.time()
         loss_list = list()
-        for batch in eval_dataloader:
-            cur_eval_step += 1
-            loss = self.get_loss(batch)
-            loss_list.append(loss.item())
-            if cur_eval_step % print_step == 0:
-                cost_time = time.time() - start_time
-                speed = cur_eval_step / cost_time
-                logging.info('infer step %d, total cost time = %.4fs, speed %.2f step/s' \
-                        % (cur_eval_step, cost_time, speed))
+        # 验证时不保存反向的梯度
+        with torch.no_grad():
+            for batch in eval_dataloader:
+                cur_eval_step += 1
+                loss = self.get_loss(batch)
+                # 保存loss时 先将其detach 不然保存的不只是loss 还有整个计算图
+                loss_list.append(loss.detach().item())
+                if cur_eval_step % print_step == 0:
+                    cost_time = time.time() - start_time
+                    speed = cur_eval_step / cost_time
+                    logging.info('infer step %d, total cost time = %.4fs, speed %.2f step/s' \
+                            % (cur_eval_step, cost_time, speed))
         loss_mean = np.mean(loss_list)
         if self.distributed:
             # 当分布式训练时 如果要考虑全部的loss

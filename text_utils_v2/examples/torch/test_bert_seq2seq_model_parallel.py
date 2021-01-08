@@ -13,11 +13,11 @@ _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../../" % _cur_dir)
 from text_utils.utils.data_io import get_file_name_list, write_to_file, get_data
 from text_utils.models.torch.base_model import BertSeq2seqModel, model_distributed
-from text_utils.models.torch.seq2seq_model import BertSeq2seqNet
-from text_utils.models.torch.bert_model import BertForSeq2seq
+from text_utils.models.torch.nets.bert import BertForSeq2seq
 
 ## 自动写诗的例子
 import logging
+import numpy as np
 import torch
 from tqdm import tqdm
 from torch.optim import Adam
@@ -77,7 +77,9 @@ class PoetDataset(Dataset):
         super(PoetDataset, self).__init__()
         self.word2idx = word2idx
         self.tokenizer = Tokenizer(word2idx)
-        self.poet_info_list = self.gen_dataset(data_dir)
+        # dataloader中的数据用numpy保存
+        # 相关issue: https://github.com/pytorch/pytorch/issues/13246
+        self.poet_info_list = np.array(self.gen_dataset(data_dir))
 
     def gen_dataset(self, data_dir):
         data_list = list()
@@ -229,6 +231,48 @@ class TestSeq2seq(unittest.TestCase):
 
         logging.info("best_loss = {}.".format(best_loss))
 
+    def test_writing_poem(self):
+        #model_name = "roberta" # 选择模型名字
+        #model_path = "./state_dict/roberta_wwm/pytorch_model.bin" # roberta模型位置
+        ##recent_model_path = "./output/roberta_model_poem.bin" # 用于把已经训练好的模型继续训练
+        #model_save_path = "./output/roberta_model_poem.bin"
+
+        model_name = "bert" # 选择模型名字
+        model_path = "./state_dict/bert_base_chinese/bert-base-chinese-pytorch_model.bin" # roberta模型位置
+        model_dir = "./state_dict/bert_base_chinese/" # bert模型目录
+        #recent_model_path = "./output/bert_model_poem.bin" # 用于把已经训练好的模型继续训练
+        #model_save_path = "./output/bert_model_poem.bin"
+
+        run_config = {
+                "model_save_path": "./output/bert_poem_parallel",
+                "best_model_save_path": "./output/bert_poem_parallel_best",
+                "epochs": 0,
+                "print_step": 100,
+                "learning_rate": 5e-5,
+                "load_best_model": True,
+                }
+        tokenizer = Tokenizer(TestSeq2seq.word2idx)
+
+        class BertPoemModel(BertSeq2seqModel):
+            @model_distributed(find_unused_parameters=True)
+            def init_model(self, model_dir):
+                bert_model = BertForSeq2seq.from_pretrained(
+                        model_dir,
+                        vocab_size=len(TestSeq2seq.word2idx),
+                        keep_tokens=TestSeq2seq.keep_tokens)
+                #load_bert(word2idx, model_name=model_name)
+                # 加载预训练的模型参数
+                #load_model_params(bert_model, model_path, keep_tokens=TestSeq2seq.keep_tokens)
+                return bert_model
+
+        model = BertPoemModel(model_dir, tokenizer=tokenizer)
+        model.load_model(run_config["best_model_save_path"])
+        if LOCAL_RANK == 0:
+            logging.info("device : {}".format(model.device))
+            model.gen_poem(is_poem=False)
+            best_loss = model.evaluate(TestSeq2seq.dataloader, print_step=50)
+            logging.info("best_loss = {}.".format(best_loss))
+
     #def gen_poem(self, model):
     #    model.eval()
     #    test_data = ["北国风光##五言绝句", "题西林壁##七言绝句", "长安早春##五言律诗"]
@@ -247,6 +291,7 @@ if __name__ == '__main__':
     # 构造测试集
     suit = unittest.TestSuite()
     suit.addTest(TestSeq2seq("test_writing_poem_train"))
+    #suit.addTest(TestSeq2seq("test_writing_poem"))
     runner = unittest.TextTestRunner()
     runner.run(suit)
 
