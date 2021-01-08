@@ -10,11 +10,10 @@ Desc  :
 import os
 import sys
 import logging
-import pandas as pd
+import numpy as np
 import torch
 import unittest
 from torch.utils.data import Dataset, DataLoader
-
 
 _cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("%s/../../" % _cur_dir)
@@ -24,7 +23,7 @@ from process_data import process_origin_poetry
 from text_utils.models.torch.base_model import BertSeq2seqModel, model_distributed
 from text_utils.models.torch.nets.bert import BertForSeq2seq
 from text_utils.tokenizers.bert_tokenizer import BertTokenizer
-from text_utils.utils.data_io import get_file_name_list, write_to_file, get_data
+from text_utils.utils.data_io import get_data
 from text_utils.utils.logger import init_log
 
 init_log(stream_level=logging.INFO)
@@ -38,7 +37,9 @@ class PoetDataset(Dataset):
         ## 一般init函数是加载所有数据
         super(PoetDataset, self).__init__()
         self.tokenizer = tokenizer
-        self.poet_info_list = self.gen_dataset(data_dir)
+        # dataloader中的数据用numpy保存
+        # 相关issue: https://github.com/pytorch/pytorch/issues/13246
+        self.poet_info_list = np.array(self.gen_dataset(data_dir))
 
     def gen_dataset(self, data_dir):
         data_list = list()
@@ -123,7 +124,7 @@ def collate_fn(batch):
 
 
 class BertPoemModel(BertSeq2seqModel):
-    def init_model(self, model_dir, tokenizer=None, keep_tokens=None):
+    def init_model(self, model_dir, tokenizer, keep_tokens):
         bert_model = BertForSeq2seq.from_pretrained(
                 model_dir,
                 vocab_size=tokenizer.vocab_size,
@@ -221,7 +222,7 @@ if __name__ == '__main__':
     # 运行指定测试用例
     # 构造测试集
     suit = unittest.TestSuite()
-    #suit.addTest(TestSeq2seq("test_writing_poem_train"))
+    suit.addTest(TestSeq2seq("test_writing_poem_train"))
     suit.addTest(TestSeq2seq("test_writing_poem"))
     runner = unittest.TextTestRunner()
     runner.run(suit)
