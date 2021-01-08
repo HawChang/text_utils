@@ -10,7 +10,7 @@ from text_utils.models.torch.bert_model import BertConfig, BertModel, BertLMPred
 import os 
 
 
-class Seq2SeqNet(nn.Module):
+class Seq2SeqModel(nn.Module):
     """
     """
     def __init__(self, config):
@@ -28,10 +28,21 @@ class Seq2SeqNet(nn.Module):
         """
         target_mask : 句子a部分和pad部分全为0， 而句子b部分为1
         """
+        # 打平
+        # predictions shape: [batch_size*(seq_length-1), self.vocab_size]
         predictions = predictions.view(-1, self.vocab_size)
+        logging.debug("predictions shape: {}".format(predictions.shape))
+
+        # 打平
+        # labels shape: [batch_size*(seq_length-1)]
         labels = labels.view(-1)
+        logging.debug("predictions shape: {}".format(labels.shape))
+
+        # 只有text_b 即为1的需要预测
         target_mask = target_mask.view(-1).float()
+        # 计算loss
         loss = nn.CrossEntropyLoss(ignore_index=0, reduction="none")
+
         return (loss(predictions, labels) * target_mask).sum() / target_mask.sum() ## 通过mask 取消 pad 和句子a部分预测的影响
 
     #def forward(self, input_tensor, token_type_id, position_enc=None, labels=None, device="cpu"):
@@ -43,14 +54,17 @@ class Seq2SeqNet(nn.Module):
         ## 通过输出最大长度得到输入的最大长度，这里问题不大，如果超过最大长度会进行截断
         self.out_max_length = out_max_length
         input_max_length = max_length - out_max_length
+
         # print(text)
+        # token_type_id 全为0
         token_ids, token_type_ids = self.tokenizer.encode(text, max_length=input_max_length)
         token_ids = torch.tensor(token_ids, device=device).view(1, -1)
         token_type_ids = torch.tensor(token_type_ids, device=device).view(1, -1)
         if is_poem:## 古诗的beam-search稍有不同
-
+            logging.debug("poem beam_search")
             out_puts_ids = self.beam_search_poem(text, token_ids, token_type_ids, self.word2ix, beam_size=beam_size, device=device)
         else:
+            logging.debug("common beam_search")
             out_puts_ids = self.beam_search(token_ids, token_type_ids, self.word2ix, beam_size=beam_size, device=device)
 
         # 解码 得到相应输出
@@ -180,46 +194,107 @@ class Seq2SeqNet(nn.Module):
         """
         beam-search操作
         """
+        # 一次只输入一个
+        # batch_size = 1
+
+        # token_ids shape: [batch_size, seq_length]
+        logging.debug("token_ids: {}".format(token_ids))
+        logging.debug("token_ids shape: {}".format(token_ids.shape))
+
+        # token_type_ids shape: [batch_size, seq_length]
+        logging.debug("token_type_ids : {}".format(token_type_ids))
+        logging.debug("token_type_ids  shape: {}".format(token_type_ids.shape))
+
         sep_id = word2ix["[SEP]"]
 
         # 用来保存输出序列
         output_ids = torch.empty(1, 0, device=device, dtype=torch.long)
+        logging.debug("output_ids: {}".format(output_ids))
+        logging.debug("output_ids shape: {}".format(output_ids.shape))
         # 用来保存累计得分
 
-        with torch.no_grad(): 
+        with torch.no_grad():
+            # 初始化各得分
+            # output_scores shape: [batch_size]
             output_scores = torch.zeros(token_ids.shape[0], device=device)
+            # 重复生成 直到达到最大长度
             for step in range(self.out_max_length):
+                logging.debug("beam size: {}".format(beam_size))
                 if step == 0:
-                    scores = self.forward(token_ids, token_type_ids, device=device)
+                    # score shape: [batch_size, seq_length, self.vocab_size]
+                    scores = self.forward(token_ids, token_type_ids, device=device, is_train=False)
+                    logging.debug("scores shape: {}".format(scores.shape))
+
                     # 重复beam-size次 输入ids
+                    # token_ids shape: [beam_size, batch_size*seq_length]
                     token_ids = token_ids.view(1, -1).repeat(beam_size, 1)
+                    logging.debug("token_ids shape: {}".format(token_ids.shape))
+
+                    # token_type_ids shape: [beam_size, batch_size*seq_length]
                     token_type_ids = token_type_ids.view(1, -1).repeat(beam_size, 1)
+                    logging.debug("token_type_ids shape: {}".format(token_type_ids.shape))
                 else:
-                    scores = self.forward(new_input_ids, new_token_type_ids, device=device)
+                    # TODO score shape: [beam_size, cur_seq_length, self.vocab_size]
+                    # cur_seq_length是逐渐变化的
+                    scores = self.forward(new_input_ids, new_token_type_ids, device=device, is_train=False)
+                    logging.debug("scores shape: {}".format(scores.shape))
 
+                # 只取最后一个输出在vocab上的score
+                # logit_score shape: [batch_size, self.vocab_size]
                 logit_score = torch.log_softmax(scores[:, -1], dim=-1)
+                logging.debug("logit_score shape: {}".format(logit_score.shape))
 
+                # logit_score shape: [batch_size, self.vocab_size]
                 logit_score = output_scores.view(-1, 1) + logit_score # 累计得分
+                logging.debug("logit_score shape: {}".format(logit_score.shape))
+
                 ## 取topk的时候我们是展平了然后再去调用topk函数
                 # 展平
+                # 这是beam_size种结果各vocab的结果打平
                 logit_score = logit_score.view(-1)
+                # 找到topk的值和位置
                 hype_score, hype_pos = torch.topk(logit_score, beam_size)
+
+                # 根据打平后的位置 找到其打平前的行列位置
+                # 行位置其实是beam_size中 的第几个beam 行位置可能有重复
+                # 列位置其实是当前beam下的vocab_id vocab_id也可能有重复
                 indice1 = (hype_pos // scores.shape[-1]) # 行索引
+                logging.debug("indice1: {}".format(indice1))
                 indice2 = (hype_pos % scores.shape[-1]).long().reshape(-1, 1) # 列索引
+                logging.debug("indice2: {}".format(indice2))
 
                 # 更新得分
+                # output_scores shape: [beam_size]
                 output_scores = hype_score
-                output_ids = torch.cat([output_ids[indice1], indice2], dim=1).long()
-                new_input_ids = torch.cat([token_ids, output_ids], dim=1)
-                new_token_type_ids = torch.cat([token_type_ids, torch.ones_like(output_ids)], dim=1)
+                logging.debug("output_scores: {}".format(output_scores))
 
+                # 更新output_ids
+                # 通过indice1选是哪个beam
+                # 通过indice2选当前beam加哪个vocab
+                # output_ids shape: [beam_size, cur_seq_length]
+                output_ids = torch.cat([output_ids[indice1], indice2], dim=1).long()
+                logging.debug("output_ids: {}".format(output_ids))
+
+                # new_input_ids shape: [beam_size, cur_seq_length]
+                # token_ids是固定原输入
+                # output_ids是当前beam_search留下的beam_size个候选路径
+                new_input_ids = torch.cat([token_ids, output_ids], dim=1)
+                logging.debug("new_input_ids shape: {}".format(new_input_ids.shape))
+
+                # new_input_ids shape: [beam_size, cur_seq_length]
+                # output_ids的type全为1
+                new_token_type_ids = torch.cat([token_type_ids, torch.ones_like(output_ids)], dim=1)
+                logging.debug("new_token_type_ids shape: {}".format(new_token_type_ids.shape))
+
+                # 记录当前output_ids中有sep_id的情况
                 end_counts = (output_ids == sep_id).sum(1)  # 统计出现的end标记
                 best_one = output_scores.argmax()
                 if end_counts[best_one] == 1:
+                    # 如果当前分数最优的已结束 则选当前该beam
                     # 说明出现终止了～
                     return output_ids[best_one]
                 else :
-                    # 保留未完成部分
+                    # 否则 去除出现sep_id的序列
                     flag = (end_counts < 1)  # 标记未完成序列
                     if not flag.all():  # 如果有已完成的
                         token_ids = token_ids[flag]
@@ -230,6 +305,7 @@ class Seq2SeqNet(nn.Module):
                         output_scores = output_scores[flag]  # 扔掉已完成序列
                         end_counts = end_counts[flag]  # 扔掉已完成end计数
                         beam_size = flag.sum()  # topk相应变化
+                        logging.debug("beam size change")
 
             return output_ids[output_scores.argmax()]
 
@@ -260,8 +336,8 @@ class Seq2SeqNet(nn.Module):
         with torch.no_grad(): 
             output_scores = torch.zeros(token_ids.shape[0], device=device)
             for step in range(self.out_max_length):
-                #logging.info("step #{}".format(step))
-                #logging.info("last_chars: {}".format(last_chars))
+                #logging.debug("step #{}".format(step))
+                #logging.debug("last_chars: {}".format(last_chars))
                 if step == 0:
                     scores = self.forward(token_ids, token_type_ids, device=device)
                     # 重复beam-size次 输入ids
@@ -307,7 +383,7 @@ class Seq2SeqNet(nn.Module):
                 for index, each_out in zip(indice1, indice2):
                     index = index.item()
                     each_out = each_out.item()
-                    #logging.info("cur_out: {}".format(ix2word[each_out]))
+                    #logging.debug("cur_out: {}".format(ix2word[each_out]))
 
                     if each_out in repeat_word[index]:
                         pass 
@@ -318,7 +394,7 @@ class Seq2SeqNet(nn.Module):
 
                     if start < beam_size and each_out == douhao_id and last_chars is not None:
                         start += 1
-                        #logging.info("last_chars[{}] = {}".format(index, last_chars[index]))
+                        #logging.debug("last_chars[{}] = {}".format(index, last_chars[index]))
                         word = ix2word[last_chars[index].item()]# 找到上一个字符 记住其押韵情况
                         for i, each_yayun in enumerate(yayun_list):
                             if word in each_yayun:
@@ -500,10 +576,16 @@ class Seq2SeqNet(nn.Module):
             return output_ids[output_scores.argmax()]
 
 
-class BertSeq2seqNet(BertModel, Seq2SeqNet):
-    def __init__(self, cfg):
-        super(BertSeq2seqNet, self).__init__(cfg)
+class BertSeq2seqNet(nn.Module):
+    def __init__(self, model_dir, tokenizer, keep_tokens):
+        super(BertSeq2seqNet, self).__init__()
+        self.bert = BertModel.from_pretrained(
+                model_dir,
+                vocab_size=len(tokenizer._token_dict),
+                keep_tokens=keep_tokens)
         self.decoder = BertLMPredictionHead(cfg, self.embeddings.word_embeddings.weight)
+
+        logging.info("bert_model state_dict: {}".format(list(self.bert.state_dict().keys())[:10]))
 
     def forward(self, input_tensor, token_type_id, position_enc=None, labels=None, device="cpu"):
         ## 传入输入，位置编码，token type id ，还有句子a 和句子b的长度，注意都是传入一个batch数据

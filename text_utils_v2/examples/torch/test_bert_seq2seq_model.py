@@ -14,6 +14,7 @@ sys.path.append("%s/../../" % _cur_dir)
 from text_utils.utils.data_io import get_file_name_list, write_to_file, get_data
 from text_utils.models.torch.base_model import BertSeq2seqModel, model_distributed
 from text_utils.models.torch.seq2seq_model import BertSeq2seqNet
+from text_utils.models.torch.bert_model import BertForSeq2seq
 
 ## 自动写诗的例子
 import logging
@@ -207,9 +208,8 @@ class TestSeq2seq(unittest.TestCase):
 
         class BertPoemModel(BertSeq2seqModel):
             def init_model(self, model_dir):
-                bert_model = BertSeq2seqNet.from_pretrained(
+                bert_model = BertForSeq2seq.from_pretrained(
                         model_dir,
-                        tokenizer=tokenizer,
                         vocab_size=len(TestSeq2seq.word2idx),
                         keep_tokens=TestSeq2seq.keep_tokens)
                 #load_bert(word2idx, model_name=model_name)
@@ -217,7 +217,7 @@ class TestSeq2seq(unittest.TestCase):
                 #load_model_params(bert_model, model_path, keep_tokens=TestSeq2seq.keep_tokens)
                 return bert_model
 
-        model = BertPoemModel(model_dir)
+        model = BertPoemModel(model_dir, tokenizer=tokenizer)
         logging.info("device : {}".format(model.device))
         best_loss = model.train(TestSeq2seq.dataloader, TestSeq2seq.dataloader, **run_config)
 

@@ -7,6 +7,16 @@ import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
 
+#def get_device(tensor):
+#    device_name = 'cpu'
+#    try:
+#        device_id = tensor.get_device()
+#        device_name = 'cuda:{}'.format(device_id) if device_id >= 0 else 'cpu'
+#    except RuntimeError as e:
+#        pass
+#    #logging.warning("get device_name: {}".format(device_name))
+#    return device_name
+
 def swish(x):
     return x * torch.sigmoid(x)
 
@@ -37,8 +47,6 @@ class BertConfig(object):
         layer_norm_eps=1e-12,
         **kwargs
     ):
-        logging.info("vocab_size: {}".format(vocab_size))
-        logging.info("kwargs: {}".format(kwargs))
 
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
@@ -82,13 +90,13 @@ class BertLayerNorm(nn.Module):
             cond = x[1]
             for _ in range(len(inputs.shape) - len(cond.shape)):
                 cond = cond.unsqueeze(dim=1)
-           
+
             weight = self.gamma + self.weight_dense(cond)
             bias = self.beta + self.bias_dense(cond)
             u = inputs.mean(-1, keepdim=True)
             s = (inputs - u).pow(2).mean(-1, keepdim=True)
             x = (inputs - u) / torch.sqrt(s + self.variance_epsilon)
-           
+
             return weight * x + bias
 
 
@@ -107,24 +115,50 @@ class BertEmbeddings(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, input_ids=None, token_type_ids=None, position_ids=None):
-        
+        # input_ids shape: [batch_size, seq_length]
+
+        logging.debug("input_shape: {}".format(input_ids.shape))
+
         input_shape = input_ids.size()
-        
+
         seq_length = input_shape[1]
         device = input_ids.device
+        # 如果没有传position_ids 则默认为序列[0,seq_length)
         if position_ids is None:
+            # cur shape: [seq_length]
             position_ids = torch.arange(seq_length, dtype=torch.long, device=device)
+            # cur shape: [batch_size, seq_length]
             position_ids = position_ids.unsqueeze(0).expand(input_shape)
+
+        # position_ids shape: [batch_size, seq_length]
+        logging.debug("position_ids shape: {}".format(position_ids.shape))
+
+        # 如果没有传入token_type_ids 默认为同一句话 因此id全为0
         if token_type_ids is None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
 
+        # inputs_embeds shape : [batch_size, seq_length, hidden_size]
         inputs_embeds = self.word_embeddings(input_ids)
-        position_embeddings = self.position_embeddings(position_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        logging.debug("inputs_embeds shape: {}".format(inputs_embeds.shape))
 
+        # position_embeddings shape : [batch_size, seq_length, hidden_size]
+        position_embeddings = self.position_embeddings(position_ids)
+        logging.debug("position_embeddings shape: {}".format(position_embeddings.shape))
+
+        # token_type_embeddings shape : [batch_size, seq_length, hidden_size]
+        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        logging.debug("token_type_embeddings shape: {}".format(token_type_embeddings.shape))
+
+        # 全加起来
         embeddings = inputs_embeds + position_embeddings + token_type_embeddings
+        logging.debug("embeddings shape: {}".format(embeddings.shape))
+
+        # layernorm + dropout
         embeddings = self.LayerNorm(embeddings)
+        logging.debug("embeddings shape: {}".format(embeddings.shape))
+
         embeddings = self.dropout(embeddings)
+        logging.debug("embeddings shape: {}".format(embeddings.shape))
         return embeddings
 
 
@@ -136,9 +170,14 @@ class BertSelfAttention(nn.Module):
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads)
             )
-        
+
+        # 多头注意力的头数
         self.num_attention_heads = config.num_attention_heads
+        logging.debug("num_attention_heads: {}".format(self.num_attention_heads))
+        # 每头的注意力维数 取整
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+        logging.debug("attention_head_size: {}".format(self.attention_head_size))
+        # 多头注意力总共的维数
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = nn.Linear(config.hidden_size, self.all_head_size)
@@ -148,10 +187,13 @@ class BertSelfAttention(nn.Module):
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def transpose_for_scores(self, x):
+        # x shape: [batch_size, seq_length, self.all_head_size]
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        # x shape: [batch_size, seq_length, self.num_attention_heads, self.attention_head_size]
         x = x.view(*new_x_shape)
 
         ## 最后xshape (batch_size, num_attention_heads, seq_len, head_size)
+        # x shape: [batch_size, self.num_attention_heads, seq_length, self.attention_head_size]
         return x.permute(0, 2, 1, 3)
 
     def forward(
@@ -160,22 +202,34 @@ class BertSelfAttention(nn.Module):
         attention_mask,
         output_attentions=False
     ):
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
+        # attention_mask shape: [batch_size, 1, seq_length, seq_length]
+        # self attention q,k,v为同一个值
+
+        # 三个shape相同: [batch_size, seq_length, self.all_head_size]
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
 
+        # 三个shape相同: [batch_size, self.num_attention_heads, seq_length, self.attention_head_size]
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
+        # attention_scores shape: [batch_size, self.num_attention_heads, seq_length, seq_length]
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        
+
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        # attention_mask: 被mask的部分为 -10000.0，未mask的部分未0
+        # attention_mask会直接与raw_attention_score相加 然后过softmax操作
+        # 则被mask的部分会极其小 相当于被忽略
+        # attention_scores shape: [batch_size, self.num_attention_heads, seq_length, seq_length]
         attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
+        # attention_probs shape: [batch_size, self.num_attention_heads, seq_length, seq_length]
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
 
         # This is actually dropping out entire tokens to attend to, which might
@@ -183,10 +237,14 @@ class BertSelfAttention(nn.Module):
         attention_probs = self.dropout(attention_probs)
 
         # 注意力加权 torch.dot()
+        # context_layer: [batch_size, self.num_attention_heads, seq_length, self.attention_head_size]
         context_layer = torch.matmul(attention_probs, value_layer)
+
         # 把加权后的V reshape, 得到[batch_size, length, embedding_dimension]
+        # context_layer: [batch_size, seq_length, self.num_attention_heads, self.attention_head_size]
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        # context_layer: [batch_size, seq_length, self.all_head_size]
         context_layer = context_layer.view(*new_context_layer_shape)
 
         # 得到输出
@@ -203,8 +261,15 @@ class BertSelfOutput(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states, input_tensor):
+        # hidden_states shape: [batch_size, seq_length, all_head_size(config.hidden_size)]
+        # input_tensor shape: [batch_size, seq_length, config.hidden_size]
+
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
+        # projection
         hidden_states = self.dense(hidden_states)
+        # dropout
         hidden_states = self.dropout(hidden_states)
+        # add + layer norm
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
@@ -221,9 +286,18 @@ class BertAttention(nn.Module):
         attention_mask,
         output_attentions=False
     ):
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
+        # attention_mask shape: [batch_size, 1, seq_length, seq_length]
+
+        # multi head attention
+        # self_outputs: [batch_size, seq_length, all_head_size]。其中，all_head_size==config.hidden_size
+        # attention_matrix shape: [batch_size, self.num_attention_heads, seq_length, seq_length]
         self_outputs, attention_metrix = self.self(hidden_states, attention_mask, output_attentions=output_attentions)
+
+        # add + layer norm
+        # attention_output shape: [batch_size, seq_length, config.hidden_size]
         attention_output = self.output(self_outputs, hidden_states)
-        
+
         return attention_output, attention_metrix
 
 
@@ -234,7 +308,11 @@ class BertIntermediate(nn.Module):
         self.intermediate_act_fn = ACT2FN[config.hidden_act] ## relu 
 
     def forward(self, hidden_states):
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
+        # fc
+        # hidden_states shape: [batch_size, seq_length, config.intermediate_size]
         hidden_states = self.dense(hidden_states)
+        # 激活函数
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
 
@@ -246,8 +324,14 @@ class BertOutput(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states, input_tensor):
+        # hidden_states shape: [batch_size, seq_length, config.intermediate_size]
+        # input_tensor shape: [batch_size, seq_length, config.hidden_size]
+
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
+
+        # add + layer norm
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
@@ -265,9 +349,21 @@ class BertLayer(nn.Module):
         attention_mask,
         output_attentions=False
     ):
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
+        # attention_mask shape: [batch_size, 1, seq_length, seq_length]
+
+        # multi head attention + add + layer norm
+        # attention_output shape: [batch_size, seq_length, config.hidden_size]
+        # attention_matrix shape: [batch_size, self.num_attention_heads, seq_length, seq_length]
         attention_output, attention_matrix = self.attention(hidden_states, attention_mask, output_attentions=output_attentions)
+
+        # feed forward
+        # intermediate_output shape: [batch_size, seq_length, config.intermediate_size]
         intermediate_output = self.intermediate(attention_output)
+
+        # add + layer norm
         layer_output = self.output(intermediate_output, attention_output)
+
         return layer_output, attention_matrix
 
 
@@ -286,7 +382,7 @@ class BertEncoder(nn.Module):
         all_encoder_layers = []
         all_attention_matrices = []
         for i, layer_module in enumerate(self.layer):
-            
+
             layer_output, attention_matrix = layer_module(
                 hidden_states, attention_mask, output_attentions=output_attentions
             )
@@ -294,10 +390,13 @@ class BertEncoder(nn.Module):
             if output_all_encoded_layers:
                 all_encoder_layers.append(hidden_states)
                 all_attention_matrices.append(attention_matrix)
+
+        # 如果只输出最后一层 则这里加上最后一层
+        # 如果输出所有层 则循环里就添加了 这里不需要
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
             all_attention_matrices.append(attention_matrix)
-            
+
         return all_encoder_layers, all_attention_matrices
 
 
@@ -310,7 +409,11 @@ class BertPooler(nn.Module):
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
+        logging.debug("hidden_states shape: {}".format(hidden_states.shape))
         first_token_tensor = hidden_states[:, 0]
+        # first_token_tensor shape: [batch_size, config.hidden_size]
+        logging.debug("first_token_tensor shape: {}".format(first_token_tensor.shape))
         pooled_output = self.dense(first_token_tensor)
         pooled_output = self.activation(pooled_output)
         return pooled_output
@@ -324,16 +427,17 @@ class BertPredictionHeadTransform(nn.Module):
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
         hidden_states = self.dense(hidden_states)
         hidden_states = self.transform_act_fn(hidden_states)
         hidden_states = self.LayerNorm(hidden_states)
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
         return hidden_states
 
 
 class BertLMPredictionHead(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
         super().__init__()
-        config = BertConfig(**config)
         self.transform = BertPredictionHeadTransform(config)
 
         # The output weights are the same as the input embeddings, but there is
@@ -347,8 +451,15 @@ class BertLMPredictionHead(nn.Module):
         self.decoder.bias = self.bias
 
     def forward(self, hidden_states):
+        logging.debug("hidden_states shape: {}".format(hidden_states.shape))
+
+        # hidden_states shape: [batch_size, seq_length, config.hidden_size]
         hidden_states = self.transform(hidden_states)
+        logging.debug("hidden_states shape: {}".format(hidden_states.shape))
+
+        # hidden_states shape: [batch_size, seq_length, config.vocab_size]
         hidden_states = self.decoder(hidden_states)
+        logging.debug("hidden_states shape: {}".format(hidden_states.shape))
         return hidden_states
 
 
@@ -406,17 +517,18 @@ class BertPreTrainedModel(nn.Module):
         with open(bert_config_path) as rf:
             bert_config_dict = dict(json.loads(rf.read()), **kwargs)
             logging.info("bert_config_dict: {}".format(bert_config_dict))
+        bert_config_dict = BertConfig(**bert_config_dict)
         model = cls(bert_config_dict)
 
         pretrained_state_dict = torch.load(bert_state_dict_path)
 
+        logging.debug("remove state dict: {}".format(
+            [k for k in pretrained_state_dict.keys() \
+                    if k[:4] != "bert" or "pooler" in k]))
+
         # 去除pooler和非bert相关的权重
         pretrained_state_dict = {k: v for k, v in pretrained_state_dict.items() \
                 if k[:4] == "bert" and "pooler" not in k}
-
-        logging.info("remove state dict: {}".format(
-            [k for k in pretrained_state_dict.keys() \
-                    if k[:4] != "bert" or "pooler" in k]))
 
         # 预训练数据有的权值
         pretrained_state_dict_name_set = pretrained_state_dict.keys()
@@ -441,16 +553,16 @@ class BertPreTrainedModel(nn.Module):
 
         return model
 
-    #def __init__(self, config, *inputs, **kwargs):
-    #    super(BertPreTrainedModel, self).__init__()
-    #    if not isinstance(config, BertConfig):
-    #        raise ValueError(
-    #            "Parameter config in `{}(config)` should be an instance of class `BertConfig`. "
-    #            "To create a model from a Google pretrained model use "
-    #            "`model = {}.from_pretrained(PRETRAINED_MODEL_NAME)`".format(
-    #                self.__class__.__name__, self.__class__.__name__
-    #            ))
-    #    self.config = config
+    def __init__(self, config, *inputs, **kwargs):
+        super(BertPreTrainedModel, self).__init__()
+        if not isinstance(config, BertConfig):
+            raise ValueError(
+                "Parameter config in `{}(config)` should be an instance of class `BertConfig`. "
+                "To create a model from a Google pretrained model use "
+                "`model = {}.from_pretrained(PRETRAINED_MODEL_NAME)`".format(
+                    self.__class__.__name__, self.__class__.__name__
+                ))
+        self.config = config
 
     def init_bert_weights(self, module):
         """ Initialize the weights.
@@ -482,7 +594,6 @@ class BertModel(BertPreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.config = BertConfig(**config)
 
         self.embeddings = BertEmbeddings(self.config)
         self.encoder = BertEncoder(self.config)
@@ -498,37 +609,204 @@ class BertModel(BertPreTrainedModel):
         position_ids=None,
         output_all_encoded_layers=True,
         output_attentions=False
-    ):  
-        
-        extended_attention_mask = (input_ids > 0).float()
-        # 注意力矩阵mask: [batch_size, 1, 1, seq_length]
-        extended_attention_mask = extended_attention_mask.unsqueeze(1).unsqueeze(2)
-        if attention_mask is not None :
-            ## 如果传进来的注意力mask不是null，那就直接用传进来的注意力mask 乘 原始mask
-            # 注意 原始mask是extended_attention_mask，这个是用来把pad部分置为0，去掉pad部分影响
-            extended_attention_mask = attention_mask * extended_attention_mask
+    ):
 
+        # 0为pad id 这里是将pad mask掉
+        # input ids shape: [batch_size, seq_length]
+        logging.debug("input ids shape: {}".format(input_ids.shape))
+        extended_attention_mask = (input_ids > 0).float()
+
+        # 注意力矩阵mask: [batch_size, 1, 1, seq_length]
+        # extended_attention_mask shape: [batch_size, 1, 1, seq_length]
+        extended_attention_mask = extended_attention_mask.unsqueeze(1).unsqueeze(2)
+        logging.debug("extended_attention_mask shape1: {}".format(extended_attention_mask.shape))
+
+        if attention_mask is not None :
+            ## 如果传进来的注意力mask不是None，那就直接用传进来的注意力mask 乘 原始mask
+            # 注意 原始mask是extended_attention_mask，这个是用来把pad部分置为0，去掉pad部分影响
+            # attention_mask shape: [batch_size, 1, seq_length, seq_length]
+            extended_attention_mask = attention_mask * extended_attention_mask
+            logging.debug("attention_mask shape: {}".format(attention_mask.shape))
+
+        # extended_attention_mask shape: [batch_size, 1, seq_length, seq_length]
+        logging.debug("extended_attention_mask shape2: {}".format(extended_attention_mask.shape))
+
+        # 如果token_type_ids为None则默认为共一句话
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids)
+        # token_type_ids shape: [batch_size, seq_length]
+        logging.debug("token_type_ids shape: {}".format(token_type_ids.shape))
 
         # extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)  # fp16 compatibility
+        # 被mask的部分为 -10000.0，未mask的部分未0
+        # extended_attention_mask会直接与raw_attention_score相加 然后过softmax操作
+        # 则被mask的部分会极其小 相当于被忽略
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        # extended_attention_mask shape: [batch_size, 1, seq_length, seq_length]
+        logging.debug("extended_attention_mask shape3: {}".format(extended_attention_mask.shape))
 
         embedding_output = self.embeddings(
             input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids
         )
+        # embedding_output shape: [batch_size, seq_length, config.hidden_size]
+        logging.debug("embedding_output shape: {}".format(embedding_output.shape))
+
+        # 返回config.num_hidden_layers层的输出
         encoder_layers, all_attention_matrices = self.encoder(
             embedding_output,
             attention_mask=extended_attention_mask,
             output_all_encoded_layers=output_all_encoded_layers,
             output_attentions=output_attentions
         )
+        logging.debug("encoder_layers size: {}".format(len(encoder_layers)))
+        logging.debug("all_attention_matrices size: {}".format(len(all_attention_matrices)))
+
+        # sequence_output shape: [batch_size, seq_length, config.hidden_size]
         sequence_output = encoder_layers[-1]
+        logging.debug("sequence_output shape: {}".format(sequence_output.shape))
+
+        # pooled_output shape: [batch_size, config.hidden_size]
         pooled_output = self.pooler(sequence_output)
+        logging.debug("pooled_output shape: {}".format(pooled_output.shape))
 
         if output_attentions:
             return all_attention_matrices
+
         if not output_all_encoded_layers:
             # 如果不用输出所有encoder层
             encoder_layers = encoder_layers[-1]
+
+        # 返回各层的输出 和最后层池化结果
         return encoder_layers, pooled_output
+
+
+class BertForSeq2seq(BertPreTrainedModel):
+    def __init__(self, config):
+        super(BertForSeq2seq, self).__init__(config)
+        self.bert = BertModel(self.config)
+        self.decoder = BertLMPredictionHead(self.config, self.bert.embeddings.word_embeddings.weight)
+        self.vocab_size = self.config.vocab_size
+
+    def forward(self,
+            input_ids,
+            token_type_ids,
+            position_ids=None,
+            labels=None,
+            output_all_encoded_layers=True,
+            output_attentions=False,
+            is_train=True,
+            device="cpu"):
+        if is_train:
+            self.bert.train()
+            self.decoder.train()
+        else:
+            self.bert.eval()
+            self.decoder.eval()
+
+        # input_tensor shape: [batch_size, seq_length]
+        logging.debug("input_ids shape: {}".format(input_ids.shape))
+        #logging.debug("input_tensor[0]: {}".format(input_tensor[0]))
+        #logging.debug("input_tensor text: {}".format("/ ".join([self.ix2word[x] for x in input_tensor[0].cpu().numpy()])))
+
+        # token_type_id 句子a及pad的部分都为0
+        # token_type_id shape: [batch_size, seq_length]
+        logging.debug("token_type_ids shape: {}".format(token_type_ids.shape))
+        #logging.debug("token_type_ids[0]: {}".format(token_type_ids[0]))
+        # position_ids shape: [batch_size, seq_length]
+        if position_ids is not None:
+            logging.debug("position_ids shape: {}".format(position_ids.shape))
+
+        if labels is not None:
+            logging.debug("labels shape: {}".format(labels.shape))
+
+        ## 传入输入，位置编码，token type id ，还有句子a 和句子b的长度，注意都是传入一个batch数据
+        ##  传入的几个值，在seq2seq 的batch iter 函数里面都可以返回
+        input_shape = input_ids.shape
+        batch_size = input_shape[0]
+        seq_len = input_shape[1]
+        ## 构建特殊的mask
+        ones = torch.ones((1, 1, seq_len, seq_len), dtype=torch.float32, device=input_ids.device)
+        # a_mask shape: [1, 1, seq_length, seq_length]
+        a_mask = ones.tril() # 下三角矩阵
+
+        # 设text_a长度为len_a，text_b长度为len_b
+        # 则token_type_id该行 = [0, 0, ..., 0, 1, 1, ...,1]
+        # 其中0有len_a个，1有len_b个
+
+        # s_ex12 shape: [batch_size, 1, 1, seq_length]
+        # 1 - 行mask
+        s_ex12 = token_type_ids.unsqueeze(1).unsqueeze(2).float()
+
+        # 1 - 列mask
+        # s_ex12 shape: [batch_size, 1, seq_length, 1]
+        s_ex13 = token_type_ids.unsqueeze(1).unsqueeze(3).float()
+
+        # (1.0 - s_ex12) * (1.0 - s_ex13) shape: [batch_size, 1, seq_length, seq_length]
+        # 行maxk*列mask即attention时始终需要的元素
+        # 在最后两维[seq_length, seq_length]的矩阵中
+        # 左上方[len_a, len_a]大小的矩阵元素为1，其余元素均为0
+
+        # s_ex13 * a_mask shape: [batch_size, 1, seq_length, seq_length]
+        # 下三角矩阵*(1-列mask)主要是为了训练时不能得到后面的信息
+        # 在最后两维[seq_length, seq_length]的矩阵中
+        # 前len_a行全为0，后len_b行，前len_a全为1，右下角[len_b, len_b]的矩阵为下三角矩阵
+        # a_mask shape: [batch_size, 1, seq_length, seq_length]
+        a_mask = (1.0 - s_ex12) * (1.0 - s_ex13) + s_ex13 * a_mask 
+
+        # 各层的输出shape：[batch_size, seq_length, config.hidden_size]
+        enc_layers, _ = self.bert(
+                input_ids,
+                position_ids=position_ids,
+                token_type_ids=token_type_ids,
+                attention_mask=a_mask,
+                output_all_encoded_layers=output_all_encoded_layers,
+                output_attentions=output_attentions)
+        # 取最后一层
+        # sequence_output shape: [batch_size, seq_length, config.hidden_size]
+        squence_out = enc_layers[-1]
+
+        # predictions shape: [batch_size, seq_length, self.vocab_size]
+        predictions = self.decoder(squence_out)
+
+        if labels is not None:
+            ## 计算loss
+            ## 需要构建特殊的输出mask 才能计算正确的loss
+            # 预测的值不用取最后sep符号的结果 因此是到-1
+
+            # 去除最后一个预测的值 在构建训练数据的时候 label也会比输入的seq_length少1
+            predictions = predictions[:, :-1].contiguous()
+            # 计算loss时只考虑target_mask中为1的 这里去除第一个为0的 与predictions和labels的维度对齐
+            # 这里取前面 是因为在构造label时 也是去掉了前一个 以达到原输入左移一位
+            # 此时labels就是各位置的下一个位置需要输出的vocab的列表
+            # 所以这里也应该从前面去除
+            # 效果是 target_mask本来是从第一个SEP（不包含SEP）之后为1 表示第二句话开始
+            # 现在前面去除一个
+            # 则target_mask从第一个SEP（包含SEP）开始为1，表示从第一个SEP开始就要预测下一个vocab是什么
+            target_mask = token_type_ids[:, 1:].contiguous()
+            logging.debug("target_mask[0]: {}".format(target_mask[0]))
+
+            loss = self.compute_loss(predictions, labels, target_mask)
+            return predictions, loss
+        else :
+            return predictions
+
+    def compute_loss(self, predictions, labels, target_mask):
+        """
+        target_mask : 句子a部分和pad部分全为0， 而句子b部分为1
+        """
+        # 打平
+        # predictions shape: [batch_size*(seq_length-1), self.vocab_size]
+        predictions = predictions.view(-1, self.vocab_size)
+        logging.debug("predictions shape: {}".format(predictions.shape))
+
+        # 打平
+        # labels shape: [batch_size*(seq_length-1)]
+        labels = labels.view(-1)
+        logging.debug("labels shape: {}".format(labels.shape))
+
+        # 只有text_b 即为1的需要预测
+        target_mask = target_mask.view(-1).float()
+        # 计算loss
+        loss = nn.CrossEntropyLoss(ignore_index=0, reduction="none")
+        # 通过mask 取消 pad 和句子a部分预测的影响
+        return (loss(predictions, labels) * target_mask).sum() / target_mask.sum() 
