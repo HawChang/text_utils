@@ -78,7 +78,9 @@ class BaseModel(object):
         if os.path.exists(model_path):
             logging.info("load model from {}".format(model_path))
             start_time = time.time()
-            state_dict = torch.load(model_path)
+            # 在cpu上加载数据 然后加载到模型
+            # 不然在分布式训练时 各卡都会在cuda:0上加载一次数据
+            state_dict = torch.load(model_path, map_location=torch.device('cpu'))
             logging.debug("state_dict_names: {}".format(state_dict.keys()))
             self.get_model().load_state_dict(state_dict, strict=strict)
             torch.cuda.empty_cache()
@@ -276,8 +278,160 @@ class BaseModel(object):
     #    return tuple(infer_res_list)
 
 class Seq2seqModel(BaseModel):
-    def generate(self, *args, **kwargs):
-        raise NotImplementedError
+    def __init__(self, *args, **kwargs):
+        self.tokenizer = kwargs["tokenizer"]
+        super(Seq2seqModel, self).__init__(*args, **kwargs)
+
+    def generate(self, text, out_max_length=40, beam_size=1, device="cpu", is_poem=False, max_length=256):
+        # 对 一个 句子生成相应的结果
+        ## 通过输出最大长度得到输入的最大长度，这里问题不大，如果超过最大长度会进行截断
+        self.out_max_length = out_max_length
+        input_max_length = max_length - out_max_length
+
+        # print(text)
+        # token_type_id 全为0
+        token_ids, token_type_ids = self.tokenizer.encode(text, max_length=input_max_length)
+        token_ids = torch.tensor(token_ids, device=device).view(1, -1)
+        token_type_ids = torch.tensor(token_type_ids, device=device).view(1, -1)
+        if is_poem:## 古诗的beam-search稍有不同
+            logging.debug("poem beam_search")
+            out_puts_ids = self.beam_search_poem(
+                    text,
+                    token_ids,
+                    token_type_ids,
+                    self.tokenizer._token_sep_id,
+                    beam_size=beam_size,
+                    device=device)
+        else:
+            logging.debug("common beam_search")
+            out_puts_ids = self.beam_search(
+                    token_ids,
+                    token_type_ids,
+                    self.tokenizer._token_sep_id,
+                    beam_size=beam_size,
+                    device=device)
+
+        return self.tokenizer.decode(out_puts_ids.cpu().numpy())
+
+    def beam_search(self, token_ids, token_type_ids, stop_id, beam_size=1, device="cpu"):
+        """
+        beam-search操作
+        """
+        # 一次只输入一个
+        # batch_size = 1
+
+        # token_ids shape: [batch_size, seq_length]
+        logging.debug("token_ids: {}".format(token_ids))
+        logging.debug("token_ids shape: {}".format(token_ids.shape))
+
+        # token_type_ids shape: [batch_size, seq_length]
+        logging.debug("token_type_ids : {}".format(token_type_ids))
+        logging.debug("token_type_ids  shape: {}".format(token_type_ids.shape))
+
+        #sep_id = word2ix["[SEP]"]
+
+        # 用来保存输出序列
+        output_ids = torch.empty(1, 0, device=device, dtype=torch.long)
+        logging.debug("output_ids: {}".format(output_ids))
+        logging.debug("output_ids shape: {}".format(output_ids.shape))
+        # 用来保存累计得分
+
+        with torch.no_grad():
+            # 初始化各得分
+            # output_scores shape: [batch_size]
+            output_scores = torch.zeros(token_ids.shape[0], device=device)
+            # 重复生成 直到达到最大长度
+            for step in range(self.out_max_length):
+                logging.debug("beam size: {}".format(beam_size))
+                if step == 0:
+                    # score shape: [batch_size, seq_length, self.vocab_size]
+                    scores = self.model(token_ids, token_type_ids, device=device, is_train=False)
+                    logging.debug("scores shape: {}".format(scores.shape))
+
+                    # 重复beam-size次 输入ids
+                    # token_ids shape: [beam_size, batch_size*seq_length]
+                    token_ids = token_ids.view(1, -1).repeat(beam_size, 1)
+                    logging.debug("token_ids shape: {}".format(token_ids.shape))
+
+                    # token_type_ids shape: [beam_size, batch_size*seq_length]
+                    token_type_ids = token_type_ids.view(1, -1).repeat(beam_size, 1)
+                    logging.debug("token_type_ids shape: {}".format(token_type_ids.shape))
+                else:
+                    # TODO score shape: [beam_size, cur_seq_length, self.vocab_size]
+                    # cur_seq_length是逐渐变化的
+                    scores = self.model(new_input_ids, new_token_type_ids, device=device, is_train=False)
+                    logging.debug("scores shape: {}".format(scores.shape))
+
+                # 只取最后一个输出在vocab上的score
+                # logit_score shape: [batch_size, self.vocab_size]
+                logit_score = torch.log_softmax(scores[:, -1], dim=-1)
+                logging.debug("logit_score shape: {}".format(logit_score.shape))
+
+                # logit_score shape: [batch_size, self.vocab_size]
+                logit_score = output_scores.view(-1, 1) + logit_score # 累计得分
+                logging.debug("logit_score shape: {}".format(logit_score.shape))
+
+                ## 取topk的时候我们是展平了然后再去调用topk函数
+                # 展平
+                # 这是beam_size种结果各vocab的结果打平
+                logit_score = logit_score.view(-1)
+                # 找到topk的值和位置
+                hype_score, hype_pos = torch.topk(logit_score, beam_size)
+
+                # 根据打平后的位置 找到其打平前的行列位置
+                # 行位置其实是beam_size中 的第几个beam 行位置可能有重复
+                # 列位置其实是当前beam下的vocab_id vocab_id也可能有重复
+                indice1 = (hype_pos // scores.shape[-1]) # 行索引
+                logging.debug("indice1: {}".format(indice1))
+                indice2 = (hype_pos % scores.shape[-1]).long().reshape(-1, 1) # 列索引
+                logging.debug("indice2: {}".format(indice2))
+
+                # 更新得分
+                # output_scores shape: [beam_size]
+                output_scores = hype_score
+                logging.debug("output_scores: {}".format(output_scores))
+
+                # 更新output_ids
+                # 通过indice1选是哪个beam
+                # 通过indice2选当前beam加哪个vocab
+                # output_ids shape: [beam_size, cur_seq_length]
+                output_ids = torch.cat([output_ids[indice1], indice2], dim=1).long()
+                logging.debug("output_ids: {}".format(output_ids))
+
+                # new_input_ids shape: [beam_size, cur_seq_length]
+                # token_ids是固定原输入
+                # output_ids是当前beam_search留下的beam_size个候选路径
+                new_input_ids = torch.cat([token_ids, output_ids], dim=1)
+                logging.debug("new_input_ids shape: {}".format(new_input_ids.shape))
+
+                # new_input_ids shape: [beam_size, cur_seq_length]
+                # output_ids的type全为1
+                new_token_type_ids = torch.cat([token_type_ids, torch.ones_like(output_ids)], dim=1)
+                logging.debug("new_token_type_ids shape: {}".format(new_token_type_ids.shape))
+
+                # 记录当前output_ids中有sep_id的情况
+                end_counts = (output_ids == stop_id).sum(1)  # 统计出现的end标记
+                best_one = output_scores.argmax()
+                if end_counts[best_one] == 1:
+                    # 如果当前分数最优的已结束 则选当前该beam
+                    # 说明出现终止了～
+                    return output_ids[best_one]
+                else :
+                    # 否则 去除出现sep_id的序列
+                    flag = (end_counts < 1)  # 标记未完成序列
+                    if not flag.all():  # 如果有已完成的
+                        token_ids = token_ids[flag]
+                        token_type_ids = token_type_ids[flag]
+                        new_input_ids = new_input_ids[flag]
+                        new_token_type_ids = new_token_type_ids[flag]
+                        output_ids = output_ids[flag]  # 扔掉已完成序列
+                        output_scores = output_scores[flag]  # 扔掉已完成序列
+                        end_counts = end_counts[flag]  # 扔掉已完成end计数
+                        beam_size = flag.sum()  # topk相应变化
+                        logging.debug("beam size change")
+
+            return output_ids[output_scores.argmax()]
+
 
 class BertSeq2seqModel(Seq2seqModel):
     def __init__(self, *args, **kwargs):
@@ -303,15 +457,18 @@ class BertSeq2seqModel(Seq2seqModel):
         cur_eval_step = 0
         start_time = time.time()
         loss_list = list()
-        for batch in eval_dataloader:
-            cur_eval_step += 1
-            loss = self.get_loss(batch)
-            loss_list.append(loss.item())
-            if cur_eval_step % print_step == 0:
-                cost_time = time.time() - start_time
-                speed = cur_eval_step / cost_time
-                logging.info('infer step %d, total cost time = %.4fs, speed %.2f step/s' \
-                        % (cur_eval_step, cost_time, speed))
+        # 验证时不保存反向的梯度
+        with torch.no_grad():
+            for batch in eval_dataloader:
+                cur_eval_step += 1
+                loss = self.get_loss(batch)
+                # 保存loss时 先将其detach 不然保存的不只是loss 还有整个计算图
+                loss_list.append(loss.detach().item())
+                if cur_eval_step % print_step == 0:
+                    cost_time = time.time() - start_time
+                    speed = cur_eval_step / cost_time
+                    logging.info('infer step %d, total cost time = %.4fs, speed %.2f step/s' \
+                            % (cur_eval_step, cost_time, speed))
         loss_mean = np.mean(loss_list)
         if self.distributed:
             # 当分布式训练时 如果要考虑全部的loss
@@ -348,11 +505,11 @@ class BertSeq2seqModel(Seq2seqModel):
     def get_best_score(self):
         return self.min_loss
 
-    def generate(self, text, beam_size, is_poem=True):
-        return self.get_model().generate(text, beam_size=beam_size, device=self.device, is_poem=is_poem)
+    #def generate(self, text, beam_size, is_poem=True):
+    #    return self.get_model().generate(text, beam_size=beam_size, device=self.device, is_poem=is_poem)
 
     def gen_poem(self, beam_size=3, is_poem=True):
         test_data = ["北国风光##五言绝句", "题西林壁##七言绝句", "长安早春##五言律诗"]
         for text in test_data:
             logging.info(text)
-            logging.info(self.generate(text, beam_size=beam_size, is_poem=is_poem))
+            logging.info(self.generate(text, beam_size=beam_size, device=self.device, is_poem=is_poem))

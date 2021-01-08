@@ -48,6 +48,7 @@ def load_model_params(model, pretrain_model_path, keep_tokens=None):
         # checkpoint = {k[5:]: v for k, v in checkpoint.items()
         checkpoint = {k: v for k, v in checkpoint.items()
                                             if k[:4] == "bert" and "pooler" not in k}
+
         # 预训练数据有的权值
         pretrained_state_dict_name_set = checkpoint.keys()
         # 模型需要的权重
