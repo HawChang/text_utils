@@ -60,6 +60,9 @@ class BertConfig(object):
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
         self.layer_norm_eps = layer_norm_eps
+        for attr, value in kwargs.items():
+            setattr(self, attr, value)
+            logging.info("extra bert config: {} = {}".format(attr, value))
 
 
 class BertLayerNorm(nn.Module):
@@ -678,6 +681,49 @@ class BertModel(BertPreTrainedModel):
 
         # 返回各层的输出 和最后层池化结果
         return encoder_layers, pooled_output
+
+
+class BertForClassification(BertPreTrainedModel):
+    """
+    """
+    def __init__(self, config):
+        super(BertForClassification, self).__init__(config)
+        self.bert = BertModel(self.config)
+        self.final_fc = torch.nn.Linear(
+                self.config.hidden_size,
+                self.config.num_class)
+
+    def compute_loss(self, predictions, labels):
+        """
+        计算loss
+        predictions: (batch_size, 1)
+        """
+        predictions = predictions.view(-1, self.config.num_class)
+        labels = labels.view(-1)
+        loss = nn.CrossEntropyLoss(reduction="mean")
+        return loss(predictions, labels)
+
+    def forward(self, token_ids, token_type_ids=None, position_ids=None, labels=None, use_layer_num=-1):
+        # 默认-1 取最后一层
+        if use_layer_num != -1:
+            if use_layer_num < 0 or use_layer_num > 7:
+                # 越界
+                raise Exception("层数选择错误，因为bert base模型共8层，"\
+                    "所以参数只只允许0 - 7， 默认为-1，取最后一层")
+        enc_layers, _ = self.bert(token_ids, token_type_ids=token_type_ids,
+            position_ids=position_ids, output_all_encoded_layers=True)
+
+        squence_out = enc_layers[use_layer_num]
+
+        cls_token = squence_out[:, 0]# 取出cls向量 进行分类
+
+        predictions = self.final_fc(cls_token)
+        if labels is not None:
+            ## 计算loss
+            loss = self.compute_loss(predictions, labels)
+            return loss, predictions
+        else :
+            return predictions
 
 
 class BertForSeq2seq(BertPreTrainedModel):

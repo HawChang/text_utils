@@ -212,7 +212,7 @@ class TestSeq2seq(unittest.TestCase):
                 ]
         for text in test_data:
             logging.info(text)
-            logging.info(model.generate(text, beam_size=3, device=model.device, is_poem=False))
+            logging.info(model.generate(text, beam_size=3, device=model.device, is_poem=True))
 
 
 if __name__ == '__main__':
