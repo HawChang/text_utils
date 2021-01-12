@@ -5,18 +5,6 @@
 state_dict
 ├── bert_base_chinese
 │   ├── bert-base-chinese-pytorch_model.bin
-│   └── bert-base-chinese-vocab.txt
-├── README.md
-└── roberta_wwm
-    ├── added_tokens.json
-    ├── config.json
-    ├── pytorch_model.bin
-    ├── special_tokens_map.json
-    ├── tokenizer_config.json
-    └── vocab.txt
-state_dict
-├── bert_base_chinese
-│   ├── bert-base-chinese-pytorch_model.bin
 │   ├── bert-base-chinese-vocab.txt
 │   ├── bert_config.json
 │   ├── config.json -> bert_config.json
